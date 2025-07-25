@@ -1,0 +1,2227 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>유나 주식 게임</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for in-browser JSX transformation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tone.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <!-- Lucide React Icons CDN -->
+    <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden; /* Prevent scroll on mobile */
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-fade-in-up {
+            animation: fade-in-up 0.5s ease-out forwards;
+        }
+        .animate-fade-in-up-slow {
+            animation: fade-in-up 0.8s ease-out forwards;
+        }
+        .animate-fade-in-up-slower {
+            animation: fade-in-up 1.2s ease-out forwards;
+        }
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-bounce-once {
+            animation: bounce-once 1s ease-out;
+        }
+        @keyframes bounce-once {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+        const { createRoot } = ReactDOM;
+        // Import Lucide React Icons
+        const { Send, Ticket, TrendingUp, BarChart2, Home, Tv, Volume2, ArrowLeft } = LucideReact;
+
+        // Custom Alert Dialog Component
+        const AlertDialog = ({ title, message, onClose }) => {
+          return (
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+              <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full transform transition-all duration-300 scale-100 opacity-100" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">{title}</h3>
+                <p className="text-gray-600 mb-6 text-center">{message}</p>
+                <button
+                  onClick={onClose}
+                  className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-indigo-700 transition-all duration-300 shadow-md"
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          );
+        };
+
+        const YunaStockGame = () => {
+          // Game States
+          const [currentApp, setCurrentApp] = useState('home');
+          const [gameStage, setGameStage] = useState('initialIntro');
+          const [selectedEnding, setSelectedEnding] = useState(null);
+          const [recentGoodNews, setRecentGoodNews] = useState(false);
+          const initialAssets = 5000000;
+
+          // Audio Players
+          const bgMusicPlayer = useRef(null);
+          const buttonClickPlayer = useRef(null);
+          const transactionPlayer = useRef(null);
+
+          // Episode states
+          const [currentEpisode, setCurrentEpisode] = useState(null);
+          const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
+          const [activeLotteryBonus, setActiveLotteryBonus] = useState(1); // 1 = normal, 2 = double chance
+
+          // TV state for persistent messages
+          const [isTvOn, setIsTvOn] = useState(false);
+          const tvMessageIntervalRef = useRef(null); // Ref to store TV message interval ID
+
+          // Game Data States
+          const [cash, setCash] = useState(initialAssets);
+          const [stress, setStress] = useState(20);
+          const [knowledge, setKnowledge] = useState(10);
+          const [isEmployee, setIsEmployee] = useState(true);
+          const [gameDay, setGameDay] = useState(1);
+          const [portfolio, setPortfolio] = useState({}); // Stores { 'StockName': { shares: N, avgPrice: M } }
+          
+          // Stock data and history
+          const [stocks, setStocks] = useState({
+            '삼성전자': { price: 68000, change: 0, history: [68000] },
+            'SK하이닉스': { price: 85000, change: 0, history: [85000] },
+            'NAVER': { price: 240000, change: 0, history: [240000] },
+            '카카오': { price: 65000, change: 0, history: [65000] },
+            'LG화학': { price: 520000, change: 0, history: [520000] },
+            '현대자동차': { price: 180000, change: 0, history: [180000] }
+          });
+          
+          // Real Estate related
+          const [realEstate, setRealEstate] = useState({}); // Stores { 'PropertyName': { quantity: N, avgPrice: M } }
+          const [realEstateData, setRealEstateData] = useState({
+            '강남 아파트': { price: 800000000, change: 0, rentYield: 0.02, description: '강남구 대치동 84㎡' },
+            '홍대 상가': { price: 300000000, change: 0, rentYield: 0.04, description: '마포구 홍익로 1층 상가' },
+            '판교 오피스텔': { price: 500000000, change: 0, rentYield: 0.03, description: '분당구 판교역 도보 5분' },
+            '부산 빌라': { price: 150000000, change: 0, rentYield: 0.05, description: '해운대구 전용 23㎡' },
+            '평창동 단독주택': { price: 1200000000, change: 0, rentYield: 0.015, description: '종로구 평창동 330㎡' },
+            '송도 신축 아파트': { price: 600000000, change: 0, rentYield: 0.025, description: '연수구 송도국제도시' },
+            '제주 펜션': { price: 400000000, change: 0, rentYield: 0.06, description: '서귀포시 해변가 펜션' },
+            '인천공항 근처 상가': { price: 250000000, change: 0, rentYield: 0.045, description: '중구 공항로 임대상가' }
+          });
+
+          // Calculate total assets (Moved up)
+          const getTotalAssets = useCallback(() => {
+            const portfolioValue = Object.entries(portfolio).reduce((total, [stock, data]) => {
+              return total + (stocks[stock]?.price || 0) * (data.shares || 0);
+            }, 0);
+            
+            const realEstateValue = Object.entries(realEstate).reduce((total, [property, data]) => {
+              return total + (realEstateData[property]?.price || 0) * (data.quantity || 0);
+            }, 0);
+            
+            return cash + portfolioValue + realEstateValue;
+          }, [cash, portfolio, stocks, realEstate, realEstateData]);
+          
+          // Initialize audio players
+          useEffect(() => {
+            const initTonePlayers = async () => {
+              try {
+                await Tone.loaded;
+
+                bgMusicPlayer.current = new Tone.Player({
+                  url: "https://github.com/heyrichoi/yuna/raw/refs/heads/main/SellBuyMusic%20-%20%ED%95%98%EC%99%80%EC%9D%B4%EC%9D%98%20%EB%B3%84%EB%82%B4%EB%A6%AC%EB%8A%94%20%EB%B0%A4.mp3",
+                  loop: true,
+                  volume: -15
+                }).toDestination();
+
+                buttonClickPlayer.current = new Tone.Player({
+                  url: "https://github.com/heyrichoi/yuna/raw/refs/heads/main/Blop%20Sound.mp3",
+                  volume: -10
+                }).toDestination();
+
+                transactionPlayer.current = new Tone.Player({
+                  url: "https://github.com/heyrichoi/yuna/raw/refs/heads/main/Coin%201.mp3",
+                  volume: -5
+                }).toDestination();
+              } catch (error) {
+                console.error("Tone.js audio loading error:", error);
+              }
+            };
+
+            initTonePlayers();
+
+            return () => {
+              bgMusicPlayer.current?.dispose();
+              buttonClickPlayer.current?.dispose();
+              transactionPlayer.current?.dispose();
+            };
+          }, []); // Run only once on mount
+
+          // Start background music when game stage is 'playing'
+          useEffect(() => {
+            if (gameStage === 'playing') {
+              if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                  if (bgMusicPlayer.current && bgMusicPlayer.current.loaded && bgMusicPlayer.current.state !== 'started') {
+                    bgMusicPlayer.current.start();
+                  }
+                }).catch(error => console.error("Failed to start Tone.js context:", error));
+              } else {
+                if (bgMusicPlayer.current && bgMusicPlayer.current.loaded && bgMusicPlayer.current.state !== 'started') {
+                  bgMusicPlayer.current.start();
+                }
+              }
+            } else {
+              if (bgMusicPlayer.current && bgMusicPlayer.current.state === 'started') {
+                bgMusicPlayer.current.stop();
+              }
+            }
+          }, [gameStage]);
+
+          // Function to play button click sound
+          const playButtonClickSound = useCallback(() => {
+            if (Tone.context.state !== 'running') {
+              Tone.start().then(() => {
+                if (buttonClickPlayer.current && buttonClickPlayer.current.loaded) {
+                  buttonClickPlayer.current.stop();
+                  buttonClickPlayer.current.start();
+                }
+              }).catch(error => console.error("Failed to play button sound:", error));
+            } else if (buttonClickPlayer.current && buttonClickPlayer.current.loaded) {
+              buttonClickPlayer.current.stop();
+              buttonClickPlayer.current.start();
+            }
+          }, []);
+
+          // Function to play transaction sound
+          const playTransactionSound = useCallback(() => {
+            if (Tone.context.state !== 'running') {
+              Tone.start().then(() => {
+                if (transactionPlayer.current && transactionPlayer.current.loaded) {
+                  transactionPlayer.current.stop();
+                  transactionPlayer.current.start();
+                }
+              }).catch(error => console.error("Failed to play transaction sound:", error));
+            } else if (transactionPlayer.current && transactionPlayer.current.loaded) {
+              transactionPlayer.current.stop();
+              transactionPlayer.current.start();
+            }
+          }, []);
+
+          // Background image state management
+          const getBackgroundImage = () => {
+            if (!isEmployee) {
+              return 'https://i.imgur.com/MeIYn0J.png';
+            }
+            return 'https://i.imgur.com/k3qPvGy.png';
+          };
+          
+          // TV related
+          const [selectedChannel, setSelectedChannel] = useState(null);
+          const [tvMessage, setTvMessage] = useState('');
+          
+          // Message related (Logic for random events, but UI removed)
+          const [messages, setMessages] = useState({
+            individual: [],
+            investors: [],
+            company: []
+          });
+          const [unreadCounts, setUnreadCounts] = useState({ // Still used for internal logic
+            individual: 0,
+            investors: 0,
+            company: 0
+          });
+          const [selectedChat, setSelectedChat] = useState(null); // No longer directly used for navigation
+          const [inputMessage, setInputMessage] = useState(''); // No longer directly used for input
+          const [waitingForResponse, setWaitingForResponse] = useState(null); // No longer directly used for choices
+
+          // Sender profile pictures
+          const senderProfiles = {
+            '친구 민지': 'https://imgur.com/zhyQMSE.jpg',
+            '엄마': 'https://imgur.com/SqjZMsh.jpg',
+            '대학 선배': 'https://imgur.com/0W7n2v1.jpg',
+            '조상님': 'https://placehold.co/40x40/8B4513/FFFFFF?text=조상',
+            '산신령': 'https://placehold.co/40x40/008000/FFFFFF?text=산신',
+            '사우디 왕자': 'https://placehold.co/40x40/FFD700/000000?text=왕자',
+            '투자고수': 'https://placehold.co/40x40/FFD700/000000?text=고수',
+            '주린이123': 'https://placehold.co/40x40/FFD700/000000?text=주린이',
+            '부동산왕': 'https://placehold.co/40x40/FFD700/000000?text=부왕',
+            '회사': 'https://placehold.co/40x40/FFD700/000000?text=회사',
+            '팀장': 'https://placehold.co/40x40/FFD700/000000?text=팀장',
+            '동료 수진': 'https://placehold.co/40x40/FFD700/000000?text=수진',
+            '시스템': 'https://placehold.co/40x40/FFD700/000000?text=시스템',
+            '자동응답': 'https://placehold.co/40x40/FFD700/000000?text=자동',
+            '유나': 'https://imgur.com/Omc3nbn.jpg'
+          };
+          
+          // Market influence system
+          const [marketInfluences, setMarketInfluences] = useState({});
+          const [currentStockView, setCurrentStockView] = useState(null);
+
+          // Alert Dialog State
+          const [showAlertDialog, setShowAlertDialog] = useState(false);
+          const [alertDialogContent, setAlertDialogContent] = useState({ title: '', message: '' });
+
+          // Lottery State
+          const lotteryPrices = { annuity: 50000, spitto: 10000 };
+          const [lotteryPurchasesToday, setLotteryPurchasesToday] = useState({ annuity: 0, spitto: 0 }); // Track daily purchases
+          const [pendingAnnuityLotteries, setPendingAnnuityLotteries] = useState([]);
+
+          // Mission State
+          const missions = [
+            { id: 1, type: 'asset', target: 7000000, description: '총 자산 700만원 달성하기' },
+            { id: 2, type: 'buyStock', target: 5, description: '주식 총 5주 구매하기' },
+            { id: 3, type: 'asset', target: 15000000, description: '총 자산 1천5백만원 달성하기' },
+            { id: 4, type: 'buyRealEstate', target: 1, description: '부동산 1채 구매하기' },
+            { id: 5, type: 'asset', target: 50000000, description: '총 자산 5천만원 달성하기' },
+            { id: 6, type: 'asset', target: 100000000, description: '총 자산 1억원 달성하기 (퇴사 가능!)' },
+            { id: 7, type: 'asset', target: 500000000, description: '총 자산 5억원 달성하기' },
+            { id: 8, type: 'asset', target: 1000000000, description: '총 자산 10억원 달성하기 (최종 목표!)' },
+          ];
+          const [currentMissionIndex, setCurrentMissionIndex] = useState(0);
+
+          // TV Channel Data
+          const tvChannels = {
+            gossip: {
+              name: '찌라시 뉴스',
+              icon: '📰',
+              description: '하이리스크 하이리턴 정보',
+              messages: [
+                { text: '🔥 "삼성전자 내부 정보! 대박 날 것 같아요!"', impact: { '삼성전자': 0.15 }, accuracy: 0.3 },
+                { text: '⚡ "카카오 관련 루머가 돌고 있습니다..."', impact: { '카카오': -0.08 }, accuracy: 0.4 },
+                { text: '💥 "이번 주 SK하이닉스가 폭등한다는 소문!"', impact: { 'SK하이닉스': 0.12 }, accuracy: 0.25 },
+                { text: '🚨 "NAVER 주가 조작설? 진실은 무엇일까요?"', impact: { 'NAVER': -0.10 }, accuracy: 0.2 }
+              ]
+            },
+            professional: {
+              name: '경제 전문채널',
+              icon: '📊',
+              description: '검증된 전문 정보',
+              messages: [
+                { text: '📈 "분석 결과, 반도체 업종이 상승세를 보이고 있습니다."', impact: { '삼성전자': 0.05, 'SK하이닉스': 0.06 }, accuracy: 0.8 },
+                { text: '📉 "플랫폼 기업들의 실적 우려가 커지고 있습니다."', impact: { 'NAVER': -0.04, '카카오': -0.03 }, accuracy: 0.75 },
+                { text: '💼 "자동차 업계의 전기차 전환이 가속화되고 있습니다."', impact: { '현대자동차': 0.08 }, accuracy: 0.9 },
+                { text: '🏭 "화학 업종의 원자재 가격 상승이 우려됩니다."', impact: { 'LG화학': -0.05 }, accuracy: 0.85 }
+              ]
+            },
+            market: {
+              name: '시장 현황',
+              icon: '📋',
+              description: '단순 시장 정보',
+              messages: [
+                { text: '📊 "코스피 지수 현재 2,450포인트입니다."', impact: {}, accuracy: 1.0 },
+                { text: '💹 "거래량이 평소보다 20% 증가했습니다."', impact: {}, accuracy: 1.0 },
+                { text: '📈 "외국인 순매수세가 이어지고 있습니다."', impact: {}, accuracy: 1.0 },
+                { text: '💱 "달러/원 환율 1,320원대에서 거래 중입니다."', impact: {}, accuracy: 1.0 }
+              ]
+            },
+            education: {
+              name: '투자 교육',
+              icon: '🎓',
+              description: '투자 지식 향상',
+              messages: [
+                { text: '📚 "분산투자의 중요성을 알아보겠습니다."', impact: {}, accuracy: 1.0 },
+                { text: '🧮 "PER과 PBR 지표 활용법을 설명드리겠습니다."', impact: {}, accuracy: 1.0 },
+                { text: '📖 "장기투자 vs 단기투자, 어떤 것이 좋을까요?"', impact: {}, accuracy: 1.0 },
+                { text: '💡 "리스크 관리의 핵심 원칙들을 살펴보겠습니다."', impact: {}, accuracy: 1.0 }
+              ]
+            },
+            entertainment: {
+              name: '연예 채널',
+              icon: '🎭',
+              description: '스트레스 해소',
+              messages: [
+                { text: '🎬 "오늘의 연예 뉴스를 전해드립니다."', impact: {}, accuracy: 1.0 },
+                { text: '🎵 "인기 아이돌 그룹의 새 앨범이 발매됩니다."', impact: {}, accuracy: 1.0 },
+                { text: '📺 "화제의 드라마 시청률이 20%를 돌파했습니다."', impact: {}, accuracy: 1.0 },
+                { text: '🎪 "주말 예능 프로그램 특집 방송이 있습니다."', impact: {}, accuracy: 1.0 }
+              ]
+            }
+          };
+
+          // Episode Data
+          const episodeData = [
+            {
+              id: 'ancestorDream',
+              title: '조상님의 꿈',
+              backgroundImage: 'https://imgur.com/amvRtMc.jpg',
+              scenes: [
+                { type: 'monologue', speaker: '유나', content: '피곤한 몸을 이끌고 잠자리에 들었다. 꿈속에서 낯선 분이 나타났는데...' },
+                { type: 'dialogue', speaker: '조상님', content: '흐음... 너의 앞날이 걱정되는구나. 내가 좋은 기운을 줄 테니 복권을 사보거라.' },
+                { type: 'dialogue', speaker: '조상님', content: '5분 동안 로또 당첨 확률이 2배가 될 것이니, 이 기회를 놓치지 마라!' },
+                { type: 'choices', speaker: '유나', content: '조상님의 말씀에 어떻게 반응할까?', choices: [
+                  { text: '감사합니다, 조상님!', outcome: () => { setActiveLotteryBonus(2); setTimeout(() => setActiveLotteryBonus(1), 300000); addMessage('individual', '시스템', '✨ 로또 당첨 확률 2배 보너스가 5분간 적용됩니다!'); } }
+                ]}
+              ]
+            },
+            {
+              id: 'bitcoinSurge',
+              title: '잊고 있던 비트코인의 떡상',
+              backgroundImage: 'https://imgur.com/I2iNAqH.jpg',
+              scenes: [
+                { type: 'monologue', speaker: '유나', content: '오랜만에 예전 노트북을 켜보았다. 왠지 모르게 낯선 프로그램이 눈에 띄는데...' },
+                { type: 'dialogue', speaker: '시스템', content: '5년 전, 당신이 호기심에 구매했던 비트코인 0.001개가 엄청난 가치로 폭등했습니다!' },
+                { type: 'dialogue', speaker: '시스템', content: '현재 가치: 1억 원!' },
+                { type: 'choices', speaker: '유나', content: '이게 꿈인가 생시인가?', choices: [
+                  { text: '대박이다! 바로 현금화해야지!', outcome: () => { setCash(prev => prev + 100000000); playTransactionSound(); addMessage('individual', '시스템', '💰 잊고 있던 비트코인으로 1억원을 획득했습니다!'); } }
+                ]}
+              ]
+            },
+            {
+              id: 'goldenSilverAxe',
+              title: '금도끼 은도끼',
+              backgroundImage: 'https://imgur.com/ATB2Hsc.jpg',
+              scenes: [
+                { type: 'monologue', speaker: '유나', content: '깊은 산속에서 길을 잃고 헤매던 중, 연못에 빠진 도끼를 발견했다. 그때 산신령이 나타나...' },
+                { type: 'dialogue', speaker: '산신령', content: '이 금도끼가 네 도끼냐? 이 은도끼가 네 도끼냐?' },
+                { type: 'choices', speaker: '유나', content: '어떤 도끼를 선택할까?', choices: [
+                  { text: '금도끼가 제 것입니다!', outcome: () => { setCash(prev => prev + 20000000); playTransactionSound(); addMessage('individual', '시스템', '💰 금도끼를 선택하여 2천만원을 획득했습니다!'); } },
+                  { text: '은도끼가 제 것입니다!', outcome: () => { setCash(prev => prev + 50000000); playTransactionSound(); addMessage('individual', '시스템', '💰 은도끼를 선택하여 5천만원을 획득했습니다!'); } }
+                ]}
+              ]
+            },
+            {
+              id: 'saudiPrince',
+              title: '사우디 왕자를 구하다',
+              backgroundImage: 'https://imgur.com/i3xtdow.jpg',
+              scenes: [
+                { type: 'monologue', speaker: '유나', content: '길을 걷던 중, 곤경에 처한 외국인을 발견했다. 왠지 모르게 범상치 않은 아우라가 느껴지는데...' },
+                { type: 'dialogue', speaker: '사우디 왕자', content: '나를 구해줘서 고맙소. 나는 사우디아라비아의 왕자요. 그대의 은혜에 보답하겠소.' },
+                { type: 'dialogue', speaker: '사우디 왕자', content: '이것은 그대에 대한 나의 작은 성의요. 부디 잘 사용해주시오.' },
+                { type: 'choices', speaker: '유나', content: '왕자의 제안을 받아들일까?', choices: [
+                  { text: '감사합니다, 왕자님!', outcome: () => { setCash(prev => prev + 100000000); playTransactionSound(); addMessage('individual', '시스템', '💰 사우디 왕자에게 1억원을 받았습니다!'); } }
+                ]}
+              ]
+            },
+            {
+              id: 'foundCheck',
+              title: '길에서 발견한 1억 수표',
+              backgroundImage: 'https://imgur.com/1Kk7mZT.jpg',
+              scenes: [
+                { type: 'monologue', speaker: '유나', content: '출근길, 길바닥에 떨어진 무언가를 발견했다. 자세히 보니 1억 원짜리 수표였다!' },
+                { type: 'dialogue', speaker: '유나', content: '이걸 어떻게 해야 할까? 경찰서에 가져다줄까, 아니면 그냥 가질까?' },
+                { type: 'choices', speaker: '유나', content: '어떤 선택을 할까?', choices: [
+                  { text: '경찰서에 가져다준다', outcome: () => { setCash(prev => prev + 5000000); playTransactionSound(); addMessage('individual', '시스템', '💰 수표를 경찰서에 가져다주고 수고비 500만원을 받았습니다!'); } },
+                  { text: '아무도 모르게 가진다', outcome: () => {
+                    if (Math.random() < 0.5) {
+                      setCash(prev => prev + 100000000);
+                      playTransactionSound();
+                      addMessage('individual', '시스템', '💰 몰래 가진 1억 수표를 성공적으로 현금화했습니다!');
+                    } else {
+                      setCash(prev => Math.max(0, prev - 10000000));
+                      addMessage('individual', '시스템', '🚨 수표를 몰래 가지려다 발각되어 벌금 1천만원을 냈습니다!');
+                    }
+                  }}
+                ]}
+              ]
+            }
+          ];
+
+          // Ending Data
+          const endings = {
+            bankruptcy: {
+              title: '💸 파산...',
+              description: '모든 돈을 잃고 빈털터리가 되었습니다.',
+              image: '😭',
+              backgroundImage: 'https://i.imgur.com/0u6807w.png',
+              condition: () => getTotalAssets() < 500000,
+              epilogue: {
+                title: '유나의 독백',
+                content: '돈을 다 잃었지만... 배운 것도 많았어. 이제 다시 시작해야겠어. 회사로 다시 돌아가서 차근차근 다시 모아보자. 이번엔 더 신중하게...',
+                afterLife: '유나는 다시 회사로 돌아가 성실하게 일하며 조금씩 저축을 시작했다. 투자의 쓴맛을 봤지만, 포기하지 않고 공부하며 준비하고 있다.'
+              }
+            },
+            backToWork: {
+              title: '🏢 복직',
+              description: '투자로 큰 수익은 없었지만 안정적인 직장으로 돌아갑니다.',
+              image: '👔',
+              backgroundImage: 'https://i.imgur.com/RrHjd3F.png',
+              condition: () => getTotalAssets() >= 3000000 && getTotalAssets() < 50000000 && stress >= 80,
+              epilogue: {
+                title: '유나의 독백',
+                content: '투자는 생각보다 어려웠어. 스트레스도 너무 많이 받았고... 그래도 완전히 망하지는 않았으니 다행이야. 회사 일이 그립네. 안정적인 월급이 최고인 것 같아.',
+                afterLife: '유나는 회사로 복귀하여 안정적인 삶을 선택했다. 가끔 주식 뉴스를 보면서도 "역시 월급쟁이가 최고야"라고 중얼거린다.'
+              }
+            },
+            pyeongchangHouse: {
+              title: '🏘️ 평창동 생활',
+              description: '평창동 단독주택을 구매하고 여유로운 삶을 시작합니다.',
+              image: '🏡',
+              backgroundImage: 'https://i.imgur.com/XHqHQgA.png',
+              condition: () => realEstate['평창동 단독주택']?.quantity > 0,
+              epilogue: {
+                title: '유나의 독백',
+                content: '평창동 집이 정말 좋아. 넓은 마당에서 차 한 잔 마시며 미래를 계획해보니 마음이 평온해져. 이제 시작이야. 더 큰 꿈을 향해 차근차근 나아가자.',
+                afterLife: '평창동 단독주택에서 여유로운 삶을 즐기는 유나. 매일 아침 마당에서 커피를 마시며 새로운 투자 기회를 모색한다. 이웃들과의 모임에서는 "투자의 여왕"으로 불린다.'
+              }
+            },
+            signielLife: {
+              title: '🏙️ 시그니엘의 여왕',
+              description: '주식 투자로 대성공하여 시그니엘에서 럭셔리한 삶을 즐깁니다.',
+              image: '👑',
+              backgroundImage: 'https://i.imgur.com/krLsjrs.png',
+              condition: () => {
+                const stockValue = Object.entries(portfolio).reduce((total, [stock, data]) => {
+                  return total + (stocks[stock]?.price || 0) * (data.shares || 0);
+                }, 0);
+                return getTotalAssets() >= 500000000 && stockValue > getTotalAssets() * 0.6;
+              },
+              epilogue: {
+                title: '유나의 독백',
+                content: '시그니엘 최고층에서 내려다보는 서울의 야경이 정말 아름다워. 주식 투자로 이런 삶을 살 수 있게 되다니... 꿈만 같아. 이제 더 많은 사람들에게 투자의 기회를 알려주고 싶어.',
+                afterLife: '시그니엘 펜트하우스에 거주하는 유나. 매일 아침 한강을 바라보며 글로벌 주식 시장을 체크한다. 유튜브 채널 "유나의 주식 라이프"를 운영하며 투자 노하우를 공유하고 있다.'
+              }
+            },
+            hawaiiLife: {
+              title: '🏝️ 하와이 생활',
+              description: '부동산 투자로 성공하여 하와이에서 자유로운 삶을 즐깁니다.',
+              image: '🌺',
+              backgroundImage: 'https://i.imgur.com/W8xi5Qm.png',
+              condition: () => {
+                const realEstateValue = Object.entries(realEstate).reduce((total, [property, data]) => {
+                  return total + (realEstateData[property]?.price || 0) * (data.quantity || 0);
+                }, 0);
+                return getTotalAssets() >= 300000000 && realEstateValue > getTotalAssets() * 0.5;
+              },
+              epilogue: {
+                title: '유나의 독백',
+                content: '하와이 해변에서 보는 일몰이 정말 환상적이야. 부동산 임대료만으로도 이렇게 여유롭게 살 수 있다니... 한국의 빌딩들이 나를 먹여 살리고 있어. 이제 진짜 자유를 얻었어.',
+                afterLife: '하와이 와이키키 해변가 콘도에서 생활하는 유나. 매달 한국에서 들어오는 임대료로 여유로운 삶을 즐긴다. 서핑과 요가를 배우며 진정한 라이프스타일을 만끽하고 있다.'
+              }
+            },
+            addictedTrader: {
+              title: '🎲 투자 중독',
+              description: '손실을 봤지만 투자를 포기하지 못하고 계속 도전합니다.',
+              image: '🔥',
+              backgroundImage: 'https://i.imgur.com/55TCUE2.png',
+              condition: () => getTotalAssets() < 8000000 && stress >= 90 && knowledge >= 80,
+              epilogue: {
+                title: '유나의 독백',
+                content: '돈은 많이 잃었지만... 이 스릴을 포기할 수 없어. 다음엔 분명 대박이 날 거야. 이렇게 많이 배웠는데 포기할 수는 없지. 한 번 더, 딱 한 번만 더!',
+                afterLife: '작은 원룸에서 여전히 투자에 몰두하는 유나. 컵라면으로 끼니를 때우며 차트를 분석한다. "이번엔 다르다"는 말을 입에 달고 살지만, 그 열정만큼은 식지 않았다.'
+              }
+            },
+            megaSuccess: {
+              title: '💎 투자의 신',
+              description: '10억원을 달성한 진정한 투자의 달인이 되었습니다!',
+              image: '🚀',
+              backgroundImage: 'https://i.imgur.com/9lVUHT1.png',
+              condition: () => getTotalAssets() >= 1000000000,
+              epilogue: {
+                title: '유나의 독백',
+                content: '10억이라니... 정말 믿기지 않아. 이제 진짜 투자의 신이 된 기분이야. 하지만 여기서 끝이 아니야. 더 많은 사람들이 경제적 자유를 얻을 수 있도록 도와주고 싶어.',
+                afterLife: '투자회사 "유나 캐피털"을 설립한 유나. 개인 투자자들을 위한 교육 프로그램을 운영하며, 매년 수십억 원의 수익을 올리고 있다. Forbes 선정 "주목할 만한 여성 투자자"에 선정되었다.'
+              }
+            }
+          };
+
+          // Check mission completion
+          useEffect(() => {
+            if (gameStage !== 'playing' || currentMissionIndex >= missions.length) return;
+
+            const mission = missions[currentMissionIndex];
+            let isCompleted = false;
+
+            if (mission.type === 'asset') {
+              if (getTotalAssets() >= mission.target) {
+                isCompleted = true;
+              }
+            } else if (mission.type === 'buyStock') {
+              const totalStocksOwned = Object.values(portfolio).reduce((sum, stock) => sum + (stock.shares || 0), 0);
+              if (totalStocksOwned >= mission.target) {
+                isCompleted = true;
+              }
+            } else if (mission.type === 'buyRealEstate') {
+              const totalRealEstateOwned = Object.values(realEstate).reduce((sum, prop) => sum + (prop.quantity || 0), 0);
+              if (totalRealEstateOwned >= mission.target) {
+                isCompleted = true;
+              }
+            }
+
+            if (isCompleted) {
+              addMessage('individual', '시스템', `✅ 미션 달성: ${mission.description}`);
+              playTransactionSound();
+              setCurrentMissionIndex(prev => prev + 1);
+              setShowAlertDialog(true);
+              setAlertDialogContent({
+                title: '미션 달성!',
+                message: `축하합니다! '${mission.description}' 미션을 달성했습니다!`
+              });
+            }
+          }, [gameDay, getTotalAssets, portfolio, realEstate, currentMissionIndex, missions, gameStage]);
+
+
+          // Calculate real-time return rate
+          const getCurrentReturnRate = useCallback(() => {
+            const totalAssets = getTotalAssets();
+            if (initialAssets === 0) return 0;
+            return ((totalAssets - initialAssets) / initialAssets) * 100;
+          }, [getTotalAssets, initialAssets]);
+
+          // Function to add messages
+          const addMessage = (type, sender, content, isUser = false, choices = null) => {
+            const newMessage = {
+              id: Date.now(),
+              sender,
+              content,
+              time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+              isUser,
+              choices
+            };
+            
+            setMessages(prev => ({
+              ...prev,
+              [type]: [...prev[type], newMessage]
+            }));
+            
+            if (!isUser) {
+              setUnreadCounts(prev => ({
+                ...prev,
+                [type]: prev[type] + 1
+              }));
+              
+              if (choices) {
+                setWaitingForResponse({ type, messageId: newMessage.id });
+              }
+            }
+          };
+
+          // Handle choice selection
+          const selectChoice = (choice, originalMessageId) => {
+            playButtonClickSound();
+            addMessage('individual', '유나', choice, true); 
+            
+            if (choice.includes('좋은 정보 감사해요') || choice.includes('더 자세히 알려주세요')) {
+              setRecentGoodNews(true);
+              setTimeout(() => setRecentGoodNews(false), 10000);
+            }
+            
+            setWaitingForResponse(null);
+            
+            setTimeout(() => {
+              const responses = [
+                '네, 알겠습니다!', '좋은 정보 감사합니다!', '현명한 판단이네요.', '저도 그렇게 생각해요!',
+                '더 자세히 알려주세요!', '흥미롭네요.', '고민해볼게요.', '알겠습니다, 참고할게요.',
+                '정말 기대되네요!', '최고의 선택입니다!', '힘내세요!', '화이팅!',
+                '성투하세요!', '대박나세요!', '조심하세요!'
+              ];
+              const response = responses[Math.floor(Math.random() * responses.length)];
+              addMessage('individual', '자동응답', response);
+            }, 1500);
+          };
+
+          // Start prologue (SNS message tutorial)
+          useEffect(() => {
+            if (gameStage === 'prologue') {
+              setMessages({ individual: [], investors: [], company: [] });
+              setUnreadCounts({ individual: 0, investors: 0, company: 0 });
+
+              setTimeout(() => {
+                addMessage('individual', '친구 민지', '야! 너 요즘 회사만 다니느라 지쳐 보이드라 ㅠㅠ', false);
+              }, 1000);
+              setTimeout(() => {
+                addMessage('individual', '친구 민지', '나 최근에 주식 시작했는데, 완전 신세계야! 너도 한번 해볼래? 🚀', false, [
+                  '정말요? 더 자세히 알려주세요'
+                ]);
+              }, 3000);
+            }
+          }, [gameStage]);
+
+          // Update stock & real estate prices
+          useEffect(() => {
+            const interval = setInterval(() => {
+              if (gameStage === 'playing') {
+                setStocks(prev => {
+                  const newStocks = { ...prev };
+                  Object.keys(newStocks).forEach(stockName => {
+                    const changePercent = (Math.random() - 0.5) * 0.15;
+                    const newPrice = Math.round(newStocks[stockName].price * (1 + changePercent));
+                    const finalPrice = Math.max(1000, newPrice);
+                    
+                    newStocks[stockName] = {
+                      ...newStocks[stockName],
+                      price: finalPrice,
+                      change: changePercent,
+                      history: [...newStocks[stockName].history.slice(-19), finalPrice]
+                    };
+                  });
+                  return newStocks;
+                });
+                
+                setRealEstateData(prev => {
+                  const newRealEstate = { ...prev };
+                  Object.keys(newRealEstate).forEach(propertyName => {
+                    const changePercent = (Math.random() - 0.5) * 0.02;
+                    const newPrice = newRealEstate[propertyName].price * (1 + changePercent);
+                    
+                    newRealEstate[propertyName] = {
+                      ...newRealEstate[propertyName],
+                      price: Math.max(50000000, Math.round(newPrice)),
+                      change: changePercent
+                    };
+                  });
+                  return newRealEstate;
+                });
+              }
+            }, 3000);
+
+            return () => clearInterval(interval);
+          }, [gameStage]);
+
+          // Game time progression and salary payment (one month every 5 minutes)
+          useEffect(() => {
+            const gameTimeInterval = setInterval(() => {
+              if (gameStage === 'playing') {
+                setGameDay(prev => prev + 1);
+                
+                if (gameDay % 30 === 0 && gameDay !== 0 && isEmployee) {
+                  setCash(prev => prev + 3000000);
+                  addMessage('individual', '회사', '월급 300만원이 입금되었습니다!');
+                }
+
+                // Reset lottery purchases at the start of a new month (every 30 days)
+                if (gameDay % 30 === 1) {
+                  setLotteryPurchasesToday({ annuity: 0, spitto: 0 });
+                }
+
+                setPendingAnnuityLotteries(prevPending => {
+                  const newPending = [];
+                  prevPending.forEach(ticket => {
+                    if (gameDay - ticket.purchaseDay >= 30) {
+                      setCash(currentCash => currentCash + ticket.potentialWinAmount);
+                      addMessage('individual', '시스템', ticket.winMessage);
+                      playTransactionSound();
+                    } else {
+                      newPending.push(ticket);
+                    }
+                  });
+                  return newPending;
+                });
+                
+                if (gameDay % 30 === 0 && gameDay !== 0) {
+                  let totalRent = 0;
+                  Object.entries(realEstate).forEach(([property, data]) => {
+                    const monthlyRent = realEstateData[property].price * realEstateData[property].rentYield / 12 * (data.quantity || 0); // Corrected to use realEstateData for rentYield
+                    totalRent += monthlyRent;
+                  });
+                  
+                  if (totalRent > 0) {
+                    setCash(prev => prev + totalRent);
+                    addMessage('individual', '시스템', `💰 부동산 임대수익 ${formatMoney(totalRent)}이 입금되었습니다!`);
+                  }
+                }
+                
+                setStress(prev => Math.max(0, prev - 1));
+                
+                // Random Episode Trigger (Every 30 game days, 20% chance, only if not already in episode)
+                if (gameDay % 30 === 0 && gameDay !== 0 && Math.random() < 0.2 && !currentEpisode) {
+                  const randomIndex = Math.floor(Math.random() * episodeData.length);
+                  setCurrentEpisode(episodeData[randomIndex]);
+                  setCurrentSceneIndex(0);
+                  setGameStage('episode');
+                }
+                
+                // Random messages
+                if (Math.random() < 0.15) {
+                  const messageScenarios = [
+                    { type: 'individual', sender: '엄마', content: '유나야, 옆집 아줌마가 부동산이 더 안전하다던데? 너도 한번 알아봐.', choices: ['엄마 말씀이 맞는 것 같아요', '주식이 더 수익성이 좋아요'] },
+                    { type: 'individual', sender: '대학 선배', content: '후배야~ 내가 증권사에서 일하는데, 요즘 LG화학 좀 위험해 보여. 조심해.', choices: ['선배 정보 감사합니다!', '더 자세히 알려주세요'] },
+                    { type: 'individual', sender: '친구 민지', content: '오늘 점심 뭐 먹지? 주식 생각하느라 배고픈 것도 잊었네 ㅋㅋㅋ', choices: ['맛있는거 먹고 힘내!', '주식 생각은 그만!'] },
+                    { type: 'individual', sender: '엄마', content: '유나야, 건강 잘 챙겨가면서 해. 돈도 좋지만 건강이 최고야.', choices: ['네 엄마 걱정마세요!', '알겠습니다.'] },
+                    { type: 'individual', sender: '친구 민지', content: '야! 요즘 코인도 대박이라던데? 우리도 한번 해볼까?', choices: ['코인은 너무 위험해!', '한번 알아볼까?'] },
+                    { type: 'individual', sender: '대학 선배', content: '글로벌 경제 상황이 심상치 않아. 포트폴리오 점검해봐.', choices: ['알겠습니다 선배님!', '어떤 부분을 봐야 할까요?'] },
+                    
+                    // Investor group messages
+                    {
+                      type: 'investors',
+                      sender: '투자고수',
+                      content: '여러분, 제가 20년 투자하면서 느낀 건데요. 분산투자가 정말 중요해요. 한 종목에 올인하지 마세요!',
+                      choices: ['정말 좋은 조언이네요!', '구체적인 비율이 궁금해요']
+                    },
+                    {
+                      type: 'investors',
+                      sender: '주린이123',
+                      content: '혹시 카카오 지금 사도 될까요? 너무 많이 떨어진 것 같은데...',
+                      choices: ['저도 고민 중이에요', '좀 더 지켜보세요']
+                    },
+                    {
+                      type: 'investors',
+                      sender: '부동산왕',
+                      content: '주식보다는 부동산이 안전하죠. 저는 강남 아파트 3채 있는데 매달 임대료만 1000만원이에요 ㅎㅎ',
+                      choices: ['부럽습니다!', '부동산도 관심있어요']
+                    },
+                    {
+                      type: 'investors',
+                      sender: '단타의신',
+                      content: '오늘 삼성전자 단타로 500만원 벌었다! 역시 단타가 최고지!',
+                      choices: ['대단하시네요!', '리스크가 크지 않나요?']
+                    },
+                    {
+                      type: 'investors',
+                      sender: '가치투자자',
+                      content: '기업의 가치를 보고 투자하세요. 단기적인 등락에 일희일비하지 마시고요.',
+                      choices: ['명심하겠습니다!', '어떤 기업이 좋을까요?']
+                    },
+                    {
+                      type: 'investors',
+                      sender: '경제전문가',
+                      content: '최근 금리 인상 가능성이 높아지고 있습니다. 시장에 유의하세요.',
+                      choices: ['중요한 정보네요!', '어떤 종목에 영향을 줄까요?']
+                    },
+                    {
+                      type: 'investors',
+                      sender: '새내기투자',
+                      content: '아.. 오늘 -10% 손실봤어요 ㅠㅠ 멘탈이 나가네요...',
+                      choices: ['힘내세요!', '손절도 중요해요.']
+                    },
+                    
+                    // Company messages (only if employee)
+                    ...(isEmployee ? [{
+                      type: 'company',
+                      sender: '팀장',
+                      content: '유나씨, 요즘 업무에 집중 안되는 것 같은데 괜찮나요? 투자 때문에 신경쓰이시죠?',
+                      choices: ['죄송합니다, 집중하겠습니다', '괜찮습니다!']
+                    },
+                    {
+                      type: 'company',
+                      sender: '동료 수진',
+                      content: '유나야, 나도 주식 하고 싶은데 어떤 거 사면 좋을까? 초보자도 할 수 있어?',
+                      choices: ['같이 공부해봐요!', '신중하게 시작하세요']
+                    },
+                    {
+                      type: 'company',
+                      sender: '팀장',
+                      content: '다음주까지 보고서 제출인데, 유나씨 진행 상황 공유 부탁드립니다.',
+                      choices: ['네 팀장님 바로 공유드리겠습니다.', '조금 더 시간이 필요합니다.']
+                    },
+                    {
+                      type: 'company',
+                      sender: '동료 수진',
+                      content: '오늘 회식인데 올거지? 스트레스 풀자!',
+                      choices: ['당연하죠!', '죄송해요 선약이 있어요.']
+                    },
+                    {
+                      type: 'company',
+                      sender: '팀장',
+                      content: '유나씨, 이번 프로젝트 성과가 아주 좋네요. 수고 많으셨습니다!',
+                      choices: ['감사합니다 팀장님!', '더 열심히 하겠습니다!']
+                    },
+                    {
+                      type: 'company',
+                      sender: '동료 수진',
+                      content: '나 이번에 승진했어! 유나 너도 곧 승진할거야!',
+                      choices: ['축하해 수진아!', '나도 얼른 승진해야지!']
+                    }
+                    ] : [])
+                  ];
+                  
+                  const randomScenario = messageScenarios[Math.floor(Math.random() * messageScenarios.length)];
+                  addMessage('individual', randomScenario.sender, randomScenario.content, false, randomScenario.choices);
+                  
+                  if (randomScenario.impact) { // Corrected from randomScenario.stockImpact
+                    setTimeout(() => {
+                      setStocks(prev => {
+                        const newStocks = { ...prev };
+                        Object.entries(randomScenario.impact).forEach(([stockName, impactPercent]) => {
+                          if (newStocks[stockName]) {
+                            const newPrice = Math.round(newStocks[stockName].price * (1 + impactPercent));
+                            newStocks[stockName] = {
+                              ...newStocks[stockName],
+                              price: Math.max(1000, newPrice),
+                              change: impactPercent,
+                              history: [...newStocks[stockName].history.slice(-19), Math.max(1000, newPrice)]
+                            };
+                          }
+                        });
+                        return newStocks;
+                      });
+                    }, 3000);
+                  }
+                }
+                
+                // Check endings - in order of priority
+                const checkEndings = () => {
+                  if (endings.bankruptcy.condition()) { setSelectedEnding('bankruptcy'); setGameStage('ending'); return; }
+                  if (endings.addictedTrader.condition()) { setSelectedEnding('addictedTrader'); setGameStage('ending'); return; }
+                  if (endings.backToWork.condition()) { setSelectedEnding('backToWork'); setGameStage('ending'); return; }
+                  if (endings.megaSuccess.condition()) { setSelectedEnding('megaSuccess'); setGameStage('ending'); return; }
+                  if (endings.signielLife.condition()) { setSelectedEnding('signielLife'); setGameStage('ending'); return; }
+                  if (endings.hawaiiLife.condition()) { setSelectedEnding('hawaiiLife'); setGameStage('ending'); return; }
+                  if (endings.pyeongchangHouse.condition()) { setSelectedEnding('pyeongchangHouse'); setGameStage('ending'); return; }
+                };
+                
+                checkEndings();
+              }
+            }, 4000);
+
+            return () => clearInterval(gameTimeInterval);
+          }, [gameStage, gameDay, isEmployee, getTotalAssets, stress, knowledge, endings, realEstate, realEstateData, portfolio, stocks, pendingAnnuityLotteries, currentEpisode]);
+
+          // TV channel message interval
+          useEffect(() => {
+            if (isTvOn && selectedChannel) {
+              let messageIndex = 0;
+              const channelMessages = tvChannels[selectedChannel].messages;
+              
+              if (channelMessages.length > 0) {
+                setTvMessage(channelMessages[messageIndex].text);
+                messageIndex = (messageIndex + 1) % channelMessages.length;
+              } else {
+                setTvMessage('');
+              }
+
+              tvMessageIntervalRef.current = setInterval(() => {
+                if (channelMessages.length > 0) {
+                  setTvMessage(channelMessages[messageIndex].text);
+                  messageIndex = (messageIndex + 1) % channelMessages.length;
+                } else {
+                  setTvMessage('');
+                }
+              }, 30000); // New message every 30 seconds (1 minute in game time)
+
+            } else {
+              setTvMessage('');
+              if (tvMessageIntervalRef.current) {
+                clearInterval(tvMessageIntervalRef.current);
+                tvMessageIntervalRef.current = null;
+              }
+            }
+            return () => {
+              if (tvMessageIntervalRef.current) {
+                clearInterval(tvMessageIntervalRef.current);
+                tvMessageIntervalRef.current = null;
+              }
+            };
+          }, [isTvOn, selectedChannel, gameStage, tvChannels]); // Added tvChannels to dependency array
+
+          // Lottery functions
+          const buyLotteryTicket = (type) => {
+            playButtonClickSound();
+            const price = lotteryPrices[type];
+            if (cash < price) {
+              setShowAlertDialog(true);
+              setAlertDialogContent({
+                title: '자금 부족!',
+                message: `복권을 구매하기 위한 현금이 부족합니다. 필요한 금액: ${formatMoney(price - cash)}`
+              });
+              return;
+            }
+            if (lotteryPurchasesToday[type] >= 30) {
+              setShowAlertDialog(true);
+              setAlertDialogContent({
+                title: '구매 제한!',
+                message: `오늘은 ${type === 'annuity' ? '연금 복권' : '스피또'}를 더 이상 구매할 수 없습니다. (일일 30회 제한)`
+              });
+              return;
+            }
+
+            setCash(prev => prev - price);
+            setLotteryPurchasesToday(prev => ({ ...prev, [type]: prev[type] + 1 }));
+
+            let winMessage = `복권 구매: ${formatMoney(price)} 사용.`;
+            let winAmount = 0;
+
+            if (type === 'annuity') {
+              const winChance = Math.random();
+              let effectiveWinChance = winChance;
+              if (activeLotteryBonus === 2) {
+                effectiveWinChance /= 2;
+              }
+
+              if (effectiveWinChance < 0.01) {
+                winAmount = 500000000;
+                winMessage = `🎉 연금 복권 1등 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`;
+              } else if (effectiveWinChance < 0.1) {
+                winAmount = 5000000;
+                winMessage = `✨ 연금 복권 2등 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`;
+              } else if (effectiveWinChance < 0.3) {
+                winAmount = 500000;
+                winMessage = `🍀 연금 복권 3등 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`;
+              } else {
+                winMessage = `꽝! 다음 기회에... 연금 복권 ${formatMoney(price)} 사용. (1개월 후 확인)`;
+              }
+              setPendingAnnuityLotteries(prev => [...prev, {
+                id: Date.now(),
+                purchaseDay: gameDay,
+                potentialWinAmount: winAmount,
+                winMessage: winMessage // Store the specific win message
+              }]);
+              setShowAlertDialog(true);
+              setAlertDialogContent({
+                title: '연금 복권 구매 완료',
+                message: winMessage.includes('꽝') ? `연금 복권을 구매했습니다. 결과는 1개월 후에 확인됩니다.` : `연금 복권 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`
+              });
+            } else if (type === 'spitto') {
+              const winChance = Math.random();
+              let effectiveWinChance = winChance;
+              if (activeLotteryBonus === 2) {
+                effectiveWinChance /= 2;
+              }
+
+              if (effectiveWinChance < 0.02) {
+                winAmount = 10000000;
+                winMessage = `🎉 스피또 1등 당첨! ${formatMoney(winAmount)} 획득!`;
+              } else if (effectiveWinChance < 0.15) {
+                winAmount = 100000;
+                winMessage = `✨ 스피또 2등 당첨! ${formatMoney(winAmount)} 획득!`;
+              } else {
+                winMessage = `꽝! 다음 기회에... 스피또 ${formatMoney(price)} 사용.`;
+              }
+              setCash(prev => prev + winAmount);
+              addMessage('individual', '시스템', winMessage);
+              playTransactionSound();
+              setShowAlertDialog(true);
+              setAlertDialogContent({
+                title: '스피또 결과',
+                message: winMessage
+              });
+            }
+          };
+
+
+          // Watch TV Channel
+          const watchChannel = (channelKeyFromClick) => {
+            playButtonClickSound();
+
+            let newlyActiveChannelKey = null;
+
+            if (isTvOn && selectedChannel === channelKeyFromClick) {
+              setIsTvOn(false);
+              setSelectedChannel(null);
+              setTvMessage('');
+              if (tvMessageIntervalRef.current) {
+                clearInterval(tvMessageIntervalRef.current);
+                tvMessageIntervalRef.current = null;
+              }
+              return;
+            } else {
+              setIsTvOn(true);
+              newlyActiveChannelKey = channelKeyFromClick;
+              setSelectedChannel(newlyActiveChannelKey);
+            }
+
+            if (tvMessageIntervalRef.current) {
+              clearInterval(tvMessageIntervalRef.current);
+            }
+
+            const channel = tvChannels[newlyActiveChannelKey];
+            if (!channel) {
+                console.error("Invalid channel selected:", newlyActiveChannelKey);
+                setTvMessage("채널 정보를 불러올 수 없습니다.");
+                return;
+            }
+
+            let messageIndex = 0;
+            const channelMessages = channel.messages;
+            
+            if (channelMessages.length > 0) {
+              setTvMessage(channelMessages[messageIndex].text);
+              messageIndex = (messageIndex + 1) % channelMessages.length;
+            } else {
+              setTvMessage('');
+            }
+
+            tvMessageIntervalRef.current = setInterval(() => {
+              if (channelMessages.length > 0) {
+                setTvMessage(channelMessages[messageIndex].text);
+                messageIndex = (messageIndex + 1) % channelMessages.length;
+              } else {
+                setTvMessage('');
+              }
+            }, 30000);
+            
+            const randomMessage = channel.messages[Math.floor(Math.random() * channel.messages.length)];
+            
+            if (randomMessage.impact && Object.keys(randomMessage.impact).length > 0) {
+              const hasPositiveImpact = Object.values(randomMessage.impact).some(impact => impact > 0);
+              if (hasPositiveImpact) {
+                setRecentGoodNews(true);
+                setTimeout(() => setRecentGoodNews(false), 15000);
+              }
+            }
+            
+            switch(newlyActiveChannelKey) {
+              case 'gossip':
+                setStress(prev => Math.min(100, prev + 5));
+                break;
+              case 'education':
+                setKnowledge(prev => Math.min(100, prev + 3));
+                break;
+              case 'entertainment':
+                setStress(prev => Math.max(0, prev - 5));
+                break;
+              default:
+                break;
+            }
+            
+            if (randomMessage.impact && Object.keys(randomMessage.impact).length > 0) {
+              const shouldApply = Math.random() < randomMessage.accuracy;
+              if (shouldApply) {
+                setTimeout(() => {
+                  setStocks(prev => {
+                    const newStocks = { ...prev };
+                    Object.entries(randomMessage.impact).forEach(([stockName, impactPercent]) => {
+                      if (newStocks[stockName]) {
+                        const newPrice = Math.round(newStocks[stockName].price * (1 + impactPercent));
+                        newStocks[stockName] = {
+                          ...newStocks[stockName],
+                          price: Math.max(1000, newPrice),
+                          change: impactPercent,
+                          history: [...newStocks[stockName].history.slice(-19), Math.max(1000, newPrice)]
+                        };
+                      }
+                    });
+                    return newStocks;
+                  });
+                }, 2000);
+              }
+            }
+          };
+
+          // Stock Trading
+          const tradeStock = (stockName, quantity, type) => {
+            playButtonClickSound();
+            if (type === 'buy') {
+              const cost = stocks[stockName].price * quantity;
+              if (cash >= cost) {
+                setCash(prev => prev - cost);
+                setPortfolio(prev => {
+                  const currentShares = prev[stockName]?.shares || 0;
+                  const currentAvgPrice = prev[stockName]?.avgPrice || 0;
+
+                  const newTotalCost = (currentShares * currentAvgPrice) + (stocks[stockName].price * quantity);
+                  const newTotalShares = currentShares + quantity;
+                  const newAvgPrice = newTotalShares > 0 ? newTotalCost / newTotalShares : 0;
+
+                  return {
+                    ...prev,
+                    [stockName]: {
+                      shares: newTotalShares,
+                      avgPrice: newAvgPrice
+                    }
+                  };
+                });
+                setStress(prev => Math.min(100, prev + 3));
+                setKnowledge(prev => Math.min(100, prev + 1));
+                playTransactionSound();
+              } else {
+                setShowAlertDialog(true);
+                setAlertDialogContent({
+                  title: '자금 부족!',
+                  message: `주식을 매수하기 위한 현금이 부족합니다. 필요한 금액: ${formatMoney(cost - cash)}`
+                });
+              }
+            } else { // type === 'sell'
+              if ((portfolio[stockName]?.shares || 0) >= quantity) {
+                const sale = stocks[stockName].price * quantity;
+                setCash(prev => prev + sale);
+                setPortfolio(prev => {
+                  const currentShares = prev[stockName].shares;
+                  const currentAvgPrice = prev[stockName].avgPrice;
+                  const remainingShares = currentShares - quantity;
+
+                  if (remainingShares === 0) {
+                    const newPortfolio = { ...prev };
+                    delete newPortfolio[stockName];
+                    return newPortfolio;
+                  } else {
+                    return {
+                      ...prev,
+                      [stockName]: {
+                        shares: remainingShares,
+                        avgPrice: currentAvgPrice
+                      }
+                    };
+                  }
+                });
+                setStress(prev => Math.min(100, prev + 2));
+                setKnowledge(prev => Math.min(100, prev + 1));
+                playTransactionSound();
+              } else {
+                setShowAlertDialog(true);
+                setAlertDialogContent({
+                  title: '보유 수량 부족!',
+                  message: `매도하려는 주식(${stockName})의 수량이 부족합니다. 보유 수량: ${portfolio[stockName]?.shares || 0}주`
+                });
+              }
+            }
+          };
+
+          // Send message (Logic kept for random events, but UI removed)
+          const sendMessage = () => {
+            // This function is no longer triggered by user input in the UI
+            // but is kept for internal game logic if needed.
+            // If you want to re-enable user messaging, you'll need to add back the input field and send button.
+          };
+
+          // Real Estate Trading
+          const tradeRealEstate = (propertyName, quantity, type) => {
+            playButtonClickSound();
+            if (type === 'buy') {
+              const cost = realEstateData[propertyName].price * quantity;
+              if (cash >= cost) {
+                setCash(prev => prev - cost);
+                setRealEstate(prev => {
+                  const currentQuantity = prev[propertyName]?.quantity || 0;
+                  const currentAvgPrice = prev[propertyName]?.avgPrice || 0;
+
+                  const newTotalCost = (currentQuantity * currentAvgPrice) + (realEstateData[propertyName].price * quantity);
+                  const newTotalQuantity = currentQuantity + quantity;
+                  const newAvgPrice = newTotalQuantity > 0 ? newTotalCost / newTotalQuantity : 0;
+
+                  return {
+                    ...prev,
+                    [propertyName]: {
+                      quantity: newTotalQuantity,
+                      avgPrice: newAvgPrice
+                    }
+                  };
+                });
+                setStress(prev => Math.min(100, prev + 2));
+                setKnowledge(prev => Math.min(100, prev + 1));
+                playTransactionSound();
+              } else {
+                setShowAlertDialog(true);
+                setAlertDialogContent({
+                  title: '자금 부족!',
+                  message: `부동산을 매입하기 위한 현금이 부족합니다. 필요한 금액: ${formatMoney(cost - cash)}`
+                });
+              }
+            } else { // type === 'sell'
+              if ((realEstate[propertyName]?.quantity || 0) >= quantity) {
+                const sale = realEstateData[propertyName].price * quantity;
+                setCash(prev => prev + sale);
+                setRealEstate(prev => {
+                  const currentQuantity = prev[propertyName].quantity;
+                  const currentAvgPrice = prev[propertyName].avgPrice;
+                  const remainingQuantity = currentQuantity - quantity;
+
+                  if (remainingQuantity === 0) {
+                    const newRealEstate = { ...prev };
+                    delete newRealEstate[propertyName];
+                    return newRealEstate;
+                  } else {
+                    return {
+                      ...prev,
+                      [propertyName]: {
+                        quantity: remainingQuantity,
+                        avgPrice: currentAvgPrice
+                      }
+                    };
+                  }
+                });
+                setStress(prev => Math.min(100, prev + 1));
+                setKnowledge(prev => Math.min(100, prev + 1));
+                playTransactionSound();
+              } else {
+                setShowAlertDialog(true);
+                setAlertDialogContent({
+                  title: '보유 수량 부족!',
+                  message: `매도하려는 부동산(${propertyName})의 수량이 부족합니다. 보유 수량: ${realEstate[propertyName]?.quantity || 0}채`
+                });
+              }
+            }
+          };
+
+          const formatMoney = (amount) => {
+            if (amount >= 100000000) return `${(amount / 100000000).toFixed(1)}억원`;
+            if (amount >= 10000) return `${(amount / 10000).toFixed(0)}만원`;
+            return `${amount.toLocaleString()}원`;
+          };
+
+          // Episode Navigation Handlers
+          const handleNextEpisodeScene = () => {
+            playButtonClickSound();
+            if (currentSceneIndex < currentEpisode.scenes.length - 1) {
+              setCurrentSceneIndex(prev => prev + 1);
+            } else {
+              setCurrentEpisode(null);
+              setCurrentSceneIndex(0);
+              setGameStage('playing');
+            }
+          };
+
+          const handleEpisodeChoice = (outcomeFunction) => {
+            outcomeFunction();
+            handleNextEpisodeScene();
+          };
+
+          // Episode Screen Component
+          const EpisodeScreen = ({ episode, currentSceneIndex, onNextScene, onChoice }) => {
+            const currentScene = episode.scenes[currentSceneIndex];
+            const isLastScene = currentSceneIndex === episode.scenes.length - 1;
+
+            return (
+              <div
+                className="max-w-sm mx-auto min-h-screen relative overflow-hidden font-inter flex flex-col items-center justify-end p-6 text-white"
+                style={{
+                  backgroundImage: `url(${episode.backgroundImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                }}
+              >
+                <div className="absolute inset-0 bg-black bg-opacity-40"></div>
+
+                <div className="relative z-10 w-full max-w-md bg-white bg-opacity-80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white border-opacity-30">
+                  <h2 className="text-2xl font-bold mb-3 text-center drop-shadow-md">{episode.title}</h2>
+                  
+                  <div className={`mb-4 p-3 rounded-xl shadow-sm ${currentScene.speaker === '유나' ? 'bg-blue-500 text-white ml-auto rounded-br-none' : 'bg-gray-200 text-gray-800 mr-auto rounded-bl-none'}`}>
+                    <div className="font-bold mb-1 text-sm">{currentScene.speaker}</div>
+                    <p className="text-base">{currentScene.content}</p>
+                  </div>
+
+                  {currentScene.choices ? (
+                    <div className="mt-4 space-y-2 flex flex-col items-center">
+                      {currentScene.choices.map((choice, index) => (
+                        <button
+                          key={index}
+                          onClick={() => onChoice(choice.outcome)}
+                          className="w-11/12 bg-gradient-to-r from-purple-600 to-indigo-700 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-indigo-800 transition-all duration-300 shadow-md"
+                        >
+                          {choice.text}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={onNextScene} {/* Corrected: Call onNextScene prop */}
+                      className="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white py-3 rounded-full font-bold text-lg shadow-xl hover:from-green-600 hover:to-blue-600 transition-all duration-300"
+                    >
+                      {isLastScene ? '에피소드 종료' : '다음'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          };
+
+          // Initial Intro Screen
+          if (gameStage === 'initialIntro') {
+            return (
+              <div
+                className="max-w-sm mx-auto min-h-screen relative overflow-hidden font-inter flex flex-col items-center justify-end p-6"
+                style={{
+                  backgroundImage: `url(https://imgur.com/sjQzlH5.jpg)`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center bottom',
+                  backgroundRepeat: 'no-repeat',
+                  transition: 'background-image 1s ease-in-out'
+                }}
+              >
+                <img 
+                  src="https://imgur.com/Omc3nbn.jpg" 
+                  alt="유나 로고" 
+                  className="relative z-10 w-40 h-40 object-contain mb-16 animate-float cursor-pointer"
+                  onClick={() => {
+                    Tone.start();
+                    setGameStage('prologue');
+                  }} 
+                  onError={(e) => { e.target.onerror = null; e.target.src="https://placehold.co/160x160/aabbcc/ffffff?text=Logo"; }} 
+                />
+              </div>
+            );
+          }
+
+          // Tutorial Screen (prologue stage - Messenger style)
+          if (gameStage === 'prologue') {
+            return (
+              <div className="max-w-sm mx-auto min-h-screen flex flex-col bg-gray-100 font-inter">
+                {/* Status Bar */}
+                <div className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                  <div className="flex justify-between items-center p-3 text-white text-sm">
+                    <span>{new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <div className="flex items-center space-x-1">
+                      <span>●●●○○</span>
+                      <span className="ml-2">📶</span>
+                      <span>🔋100%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chat Header */}
+                <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4 flex items-center shadow-md" style={{ marginTop: '48px' }}>
+                  <h1 className="text-xl font-bold">친구 민지</h1>
+                </div>
+                
+                {/* Chat Messages Area */}
+                <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
+                  {messages.individual.map(msg => (
+                    <div key={msg.id} className={`mb-4 flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
+                      {!msg.isUser && (
+                        <img 
+                          src={senderProfiles[msg.sender] || "https://placehold.co/40x40/FFD700/000000?text=?"}
+                          alt="프로필" 
+                          className="w-10 h-10 rounded-full mr-3 self-end"
+                        />
+                      )}
+                      <div className={`inline-block max-w-[70%] p-3 rounded-xl shadow-sm ${
+                        msg.isUser ? 'bg-green-500 text-white rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                      }`}>
+                        {!msg.isUser && <div className="text-xs font-bold mb-1 text-gray-700">{msg.sender}</div>}
+                        <div>{msg.content}</div>
+                        <div className={`text-xs opacity-70 mt-1 ${msg.isUser ? 'text-green-100' : 'text-gray-400'}`}>{msg.time}</div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Choices for user response */}
+                  {waitingForResponse && messages.individual.find(m => m.id === waitingForResponse.messageId)?.choices && (
+                    <div className="mt-4 space-y-2 flex flex-col items-center">
+                      {messages.individual.find(m => m.id === waitingForResponse.messageId).choices.map((choice, index) => (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            selectChoice(choice, waitingForResponse.messageId);
+                            if (choice.includes('정말요? 더 자세히 알려주세요') || choice.includes('좋은 정보 감사해요!')) {
+                              setGameStage('playing');
+                            }
+                          }}
+                          className="w-11/12 bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-3 rounded-lg text-sm font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all duration-300 shadow-md"
+                        >
+                          {choice}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Message Input */}
+                <div className="p-4 border-t border-gray-200 flex bg-white shadow-inner">
+                  <input
+                    type="text"
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    placeholder="메시지를 입력하세요..."
+                    className="flex-1 border border-gray-300 rounded-full px-4 py-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                    disabled={waitingForResponse !== null}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    className="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-3 rounded-full shadow-md hover:from-green-600 hover:to-emerald-700 transition-all duration-300"
+                    disabled={waitingForResponse !== null}
+                  >
+                    <Send size={20} />
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // Home Screen
+          if (currentApp === 'home') {
+            const returnRate = getCurrentReturnRate();
+            const returnRateColor = returnRate >= 0 ? 'text-red-400' : 'text-blue-400';
+
+            return (
+              <div
+                className="max-w-sm mx-auto min-h-screen relative overflow-hidden font-inter"
+                style={{
+                  backgroundImage: `url(${getBackgroundImage()})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center bottom',
+                  backgroundRepeat: 'no-repeat',
+                  transition: 'background-image 1s ease-in-out'
+                }}
+              >
+                {/* Status Bar - Fixed at top */}
+                <div className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-black bg-opacity-30 backdrop-blur-sm shadow-lg">
+                  <div className="flex justify-between items-center p-3 text-white text-sm">
+                    <span>9:41</span>
+                    <div className="flex items-center space-x-1">
+                      <span>●●●○○</span>
+                      <span className="ml-2">📶</span>
+                      <span>🔋100%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Game Info (Total Assets) with a box background */}
+                <div className="relative z-10 text-center text-white pt-10 pb-4">
+                  <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-4 mx-4 shadow-lg border border-white border-opacity-30">
+                    <div className="text-3xl font-bold drop-shadow-lg">총 자산: {formatMoney(getTotalAssets())}</div>
+                    <div className="text-sm opacity-80 mt-2 space-y-1">
+                      <p>현금: {formatMoney(cash)}</p>
+                      <p>주식 자산: {formatMoney(Object.entries(portfolio).reduce((total, [stock, data]) => total + (stocks[stock]?.price || 0) * (data.shares || 0), 0))}</p>
+                      <p>부동산 자산: {formatMoney(Object.entries(realEstate).reduce((total, [property, data]) => total + (realEstateData[property]?.price || 0) * (data.quantity || 0), 0))}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Current Mission Display */}
+                {currentMissionIndex < missions.length && (
+                  <div className="relative z-10 text-center text-white pt-4 pb-4">
+                    <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-3 mx-4 shadow-lg border border-white border-opacity-30">
+                      <div className="text-sm font-bold drop-shadow-lg">현재 미션:</div>
+                      <div className="text-lg font-semibold drop-shadow-lg">{missions[currentMissionIndex].description}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TV Broadcast Bubble - Positioned relative to flow, not fixed */}
+                {tvMessage && isTvOn && (
+                  <div className="relative z-20 mx-4 mb-4 mt-2">
+                    <div className="bg-white bg-opacity-80 rounded-xl p-3 shadow-xl border border-gray-200 animate-fade-in-up">
+                      <div className="text-sm text-gray-800 font-medium">{tvMessage}</div>
+                      <div className="absolute bottom-0 left-6 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white transform translate-y-full"></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bottom Dock - All 5 main icons in one row, centered return rate */}
+                <div className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-40 bg-white bg-opacity-20 backdrop-blur-md rounded-t-3xl p-4 shadow-inner-lg">
+                  <div className="flex justify-around items-center">
+                    {/* Lottery Button (Replaced Messages) */}
+                    <button
+                      onClick={() => { playButtonClickSound(); setCurrentApp('lottery'); }}
+                      className="flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 relative p-2 rounded-xl"
+                    >
+                      <Ticket size={28} className="mb-1 text-yellow-300 drop-shadow-md" />
+                      <span className="text-xs font-semibold">복권</span>
+                    </button>
+                    {/* Stocks Button */}
+                    <button
+                      onClick={() => { playButtonClickSound(); setCurrentApp('stocks'); }}
+                      className="flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 p-2 rounded-xl"
+                    >
+                      <TrendingUp size={28} className="mb-1 text-blue-300 drop-shadow-md" />
+                      <span className="text-xs font-semibold">주식</span>
+                    </button>
+                    {/* Return Rate Display - Centered */}
+                    <div className="flex flex-col items-center text-white opacity-90 p-2 rounded-xl">
+                      <BarChart2 size={28} className={`mb-1 ${returnRateColor} drop-shadow-md`} />
+                      <span className="text-xs font-semibold">수익률</span>
+                      <span className={`text-sm font-bold ${returnRateColor}`}>
+                        {returnRate.toFixed(2)}%
+                      </span>
+                    </div>
+                    {/* Real Estate Button */}
+                    <button
+                      onClick={() => { playButtonClickSound(); setCurrentApp('realestate'); }}
+                      className="flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 p-2 rounded-xl"
+                    >
+                      <Home size={28} className="mb-1 text-orange-300 drop-shadow-md" />
+                      <span className="text-xs font-semibold">부동산</span>
+                    </button>
+                    {/* TV Button */}
+                    <button
+                      onClick={() => { playButtonClickSound(); setCurrentApp('tv'); }} {/* Changed to navigate to 'tv' app */}
+                      className={`flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 p-2 rounded-xl ${isTvOn ? 'text-purple-300' : 'text-gray-400 opacity-60'}`}
+                    >
+                      <Tv size={28} className="mb-1 drop-shadow-md" />
+                      <span className="text-xs font-semibold">TV</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Alert Dialog */}
+                {showAlertDialog && (
+                  <AlertDialog
+                    title={alertDialogContent.title}
+                    message={alertDialogContent.message}
+                    onClose={() => setShowAlertDialog(false)}
+                  />
+                )}
+              </div>
+            );
+          }
+
+          // Episode Screen
+          if (gameStage === 'episode' && currentEpisode) {
+            return (
+              <EpisodeScreen
+                episode={currentEpisode}
+                currentSceneIndex={currentSceneIndex}
+                onNextScene={handleNextEpisodeScene}
+                onChoice={handleEpisodeChoice}
+              />
+            );
+          }
+
+          // Stock App
+          if (currentApp === 'stocks') {
+            if (!currentStockView) { // Stock list view
+              return (
+                <div className="max-w-sm mx-auto bg-gray-100 min-h-screen font-inter">
+                  {/* Status Bar */}
+                  <div className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                    <div className="flex justify-between items-center p-3 text-white text-sm">
+                      <span>9:41</span>
+                      <div className="flex items-center space-x-1">
+                        <span>●●●○○</span>
+                        <span className="ml-2">📶</span>
+                        <span>🔋100%</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 flex items-center shadow-md" style={{ marginTop: '50px' }}>
+                    <button onClick={() => { playButtonClickSound(); setCurrentApp('home'); }} className="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                      <ArrowLeft size={24} />
+                    </button>
+                    <h1 className="text-xl font-bold">주식</h1>
+                  </div>
+                  
+                  <div className="p-4">
+                    <div className="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                      <div className="text-sm text-gray-600">보유 현금</div>
+                      <div className="text-3xl font-bold text-blue-700">{formatMoney(cash)}</div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {Object.entries(stocks).map(([stockName, data]) => (
+                        <button
+                          key={stockName}
+                          onClick={() => { playButtonClickSound(); setCurrentStockView(stockName); }}
+                          className={`w-full bg-white border rounded-xl p-4 shadow-lg hover:shadow-xl transition-all duration-300 text-left transform hover:scale-[1.01] ${
+                            portfolio[stockName]?.shares > 0 ? 'border-2 border-yellow-500' : ''
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-bold text-lg text-gray-800">{stockName}</span>
+                            <div className="text-right">
+                              <div className="font-bold text-xl text-gray-900">{data.price.toLocaleString()}원</div>
+                              <div className={`text-sm font-semibold ${data.change >= 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                                {data.change >= 0 ? '▲' : '▼'} {(Math.abs(data.change) * 100).toFixed(2)}%
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Mini Line Graph */}
+                          <div className="mb-3">
+                            <svg width="100%" height="32" className="overflow-visible">
+                              {(() => {
+                                const miniHistory = data.history.slice(-10);
+                                const maxPrice = Math.max(...miniHistory);
+                                const minPrice = Math.min(...miniHistory);
+                                const priceRange = maxPrice - minPrice || 1;
+                                const width = 200;
+                                const height = 24;
+                                
+                                const points = miniHistory.map((price, index) => {
+                                  const x = (index / (miniHistory.length - 1)) * width;
+                                  const y = ((maxPrice - price) / priceRange) * height;
+                                  return `${x},${y}`;
+                                }).join(' ');
+                                
+                                return (
+                                  <polyline 
+                                    points={points}
+                                    fill="none"
+                                    stroke={data.change >= 0 ? "#ef4444" : "#3b82f6"}
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                );
+                              })()}
+                            </svg>
+                          </div>
+                          
+                          <div className="flex justify-between items-center text-sm text-gray-600">
+                            <span>보유: <span className="font-semibold">{portfolio[stockName]?.shares || 0}주</span></span>
+                            <span className="text-blue-600 font-semibold">상세보기 →</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            } else { // Stock detail view
+              const stockData = stocks[currentStockView];
+              const ownedStockData = portfolio[currentStockView];
+              const hasOwnedShares = ownedStockData?.shares > 0;
+              const profitLoss = hasOwnedShares ? (stockData.price - ownedStockData.avgPrice) * ownedStockData.shares : 0;
+              const profitLossPercent = hasOwnedShares && ownedStockData.avgPrice > 0 ? (profitLoss / (ownedStockData.shares * ownedStockData.avgPrice)) * 100 : 0;
+              const profitLossColor = profitLoss >= 0 ? 'text-red-500' : 'text-blue-500';
+
+              return (
+                <div className="max-w-sm mx-auto bg-gray-100 min-h-screen font-inter">
+                  {/* Status Bar */}
+                  <div className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                    <div className="flex justify-between items-center p-3 text-white text-sm">
+                      <span>9:41</span>
+                      <div className="flex items-center space-x-1">
+                        <span>●●●○○</span>
+                        <span className="ml-2">📶</span>
+                        <span>🔋100%</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 flex items-center shadow-md" style={{ marginTop: '50px' }}>
+                    <button onClick={() => { playButtonClickSound(); setCurrentStockView(null); }} className="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                      <ArrowLeft size={24} />
+                    </button>
+                    <h1 className="text-xl font-bold">{currentStockView}</h1>
+                  </div>
+                  
+                  <div className="p-4">
+                    {/* Current Price */}
+                    <div className="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                      <div className="text-center">
+                        <div className="text-4xl font-extrabold text-gray-900 mb-1">{stockData.price.toLocaleString()}원</div>
+                        <div className={`text-xl font-semibold ${stockData.change >= 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                          {stockData.change >= 0 ? '▲' : '▼'} {(Math.abs(stockData.change) * 100).toFixed(2)}%
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Detailed Chart - Line Graph */}
+                    <div className="bg-white border rounded-xl p-4 mb-4 shadow-lg">
+                      <h3 className="font-bold text-gray-800 mb-3 text-lg">가격 추이</h3>
+                      <div className="relative">
+                        <svg width="100%" height="120" className="overflow-visible">
+                          <defs>
+                            <linearGradient id="priceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                              <stop offset="0%" stopColor={stockData.change >= 0 ? "#ef4444" : "#3b82f6"} stopOpacity="0.3"/>
+                              <stop offset="100%" stopColor={stockData.change >= 0 ? "#ef4444" : "#3b82f6"} stopOpacity="0.1"/>
+                            </linearGradient>
+                          </defs>
+                          
+                          {(() => {
+                            const miniHistory = stockData.history.slice(-10);
+                            const maxPrice = Math.max(...miniHistory);
+                            const minPrice = Math.min(...miniHistory);
+                            const priceRange = maxPrice - minPrice || 1;
+                            const width = 280;
+                            const height = 80;
+                            const padding = 10;
+                            
+                            const points = miniHistory.map((price, index) => {
+                              const x = padding + (index / (miniHistory.length - 1)) * (width - 2 * padding);
+                              const y = padding + ((maxPrice - price) / priceRange) * height;
+                              return `${x},${y}`;
+                            }).join(' ');
+                            
+                            const areaPoints = `${padding},${height + padding} ${points} ${width - padding},${height + padding}`;
+                            
+                            return (
+                              <>
+                                <polygon 
+                                  points={areaPoints} 
+                                  fill="url(#priceGradient)"
+                                />
+                                <polyline 
+                                  points={points}
+                                  fill="none"
+                                  stroke={stockData.change >= 0 ? "#ef4444" : "#3b82f6"}
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                                {stockData.history.map((price, index) => {
+                                  const x = padding + (index / (stockData.history.length - 1)) * (width - 2 * padding);
+                                  const y = padding + ((maxPrice - price) / priceRange) * height;
+                                  return (
+                                    <circle
+                                      key={index}
+                                      cx={x}
+                                      cy={y}
+                                      r="3"
+                                      fill={stockData.change >= 0 ? "#ef4444" : "#3b82f6"}
+                                      className="hover:r-4 transition-all duration-200 cursor-pointer"
+                                    >
+                                      <title>{price.toLocaleString()}원</title> 
+                                    </circle>
+                                  );
+                                })}
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-2 text-center">
+                        최근 {stockData.history.length}일간 데이터
+                      </div>
+                    </div>
+                    
+                    {/* Holdings Status */}
+                    <div className="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                      <div className="text-sm text-gray-600">보유 주식</div>
+                      <div className="text-3xl font-bold text-blue-700">{ownedStockData?.shares || 0}주</div>
+                      {hasOwnedShares && (
+                        <div className="text-sm text-gray-600 mt-2">
+                          <p>평가금액: <span className="font-semibold">{formatMoney((ownedStockData.shares || 0) * stockData.price)}</span></p>
+                          <p>평균 매수가: <span className="font-semibold">{formatMoney(ownedStockData.avgPrice)}</span></p>
+                          <p>손익: <span className={`font-bold ${profitLossColor}`}>{formatMoney(profitLoss)} ({profitLossPercent.toFixed(2)}%)</span></p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Trade Buttons */}
+                    <div className="space-y-6">
+                      <div>
+                        <div className="text-xl font-bold text-red-600 mb-3">매수</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {[1, 5, 10, 20].map(quantity => (
+                            <button
+                              key={quantity}
+                              onClick={() => tradeStock(currentStockView, quantity, 'buy')}
+                              className="bg-red-500 text-white py-4 px-4 rounded-xl font-bold text-lg shadow-md hover:bg-red-600 transition-all duration-300 transform hover:scale-105"
+                            >
+                              {quantity}주 매수<br/>
+                              <span className="text-sm opacity-90">
+                                {formatMoney(stockData.price * quantity)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-xl font-bold text-blue-600 mb-3">매도</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {[1, 5, 10, 20].map(quantity => (
+                            <button
+                              key={quantity}
+                              onClick={() => tradeStock(currentStockView, quantity, 'sell')}
+                              className="bg-blue-500 text-white py-4 px-4 rounded-xl font-bold text-lg shadow-md hover:bg-blue-600 transition-all duration-300 transform hover:scale-105"
+                              disabled={!hasOwnedShares || ownedStockData.shares < quantity}
+                            >
+                              {quantity}주 매도<br/>
+                              <span className="text-sm opacity-90">
+                                {formatMoney(stockData.price * quantity)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Alert Dialog */}
+                  {showAlertDialog && (
+                    <AlertDialog
+                      title={alertDialogContent.title}
+                      message={alertDialogContent.message}
+                      onClose={() => setShowAlertDialog(false)}
+                    />
+                  )}
+                </div>
+              );
+            }
+          }
+
+          // Real Estate App
+          if (currentApp === 'realestate') {
+            return (
+              <div className="max-w-sm mx-auto bg-gray-100 min-h-screen font-inter">
+                  {/* Status Bar */}
+                  <div className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                    <div className="flex justify-between items-center p-3 text-white text-sm">
+                      <span>9:41</span>
+                      <div className="flex items-center space-x-1">
+                        <span>●●●○○</span>
+                        <span className="ml-2">📶</span>
+                        <span>🔋100%</span>
+                      </div>
+                    </div>
+                  </div>
+                
+                <div className="bg-gradient-to-r from-orange-500 to-red-600 text-white p-4 flex items-center shadow-md" style={{ marginTop: '50px' }}>
+                    <button onClick={() => { playButtonClickSound(); setCurrentApp('home'); }} className="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                      <ArrowLeft size={24} />
+                    </button>
+                    <h1 className="text-xl font-bold">부동산</h1>
+                  </div>
+                
+                <div className="p-4">
+                  <div className="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                    <div className="text-sm text-gray-600">보유 현금</div>
+                    <div className="text-3xl font-bold text-orange-700">{formatMoney(cash)}</div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {Object.entries(realEstateData).map(([propertyName, data]) => (
+                      <div key={propertyName} className="bg-white border rounded-xl p-4 shadow-lg transform hover:scale-[1.01] transition-all duration-300">
+                        <div className="flex justify-between items-center mb-2">
+                          <div>
+                            <div className="font-bold text-lg text-gray-800">{propertyName}</div>
+                            <div className="text-xs text-gray-500">{data.description}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-xl text-gray-900">{formatMoney(data.price)}</div>
+                            <div className={`text-sm font-semibold ${data.change >= 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                              {data.change >= 0 ? '▲' : '▼'} {(Math.abs(data.change) * 100).toFixed(2)}%
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="bg-gray-50 rounded-lg p-3 mb-3 shadow-inner">
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">연 수익률</span>
+                              <span className="font-bold text-green-600">{(data.rentYield * 100).toFixed(1)}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">월 임대료</span>
+                              <span className="font-bold text-green-600">
+                                {formatMoney(data.price * data.rentYield / 12)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="font-bold">보유</span>
+                              <span className="font-bold">{realEstate[propertyName]?.quantity || 0}채</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">총 가치</span>
+                              <span className="font-bold text-orange-700">
+                                {formatMoney(data.price * (realEstate[propertyName]?.quantity || 0))}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div className="text-base font-bold text-red-600">매입</div>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[1, 2].map(quantity => (
+                              <button
+                                key={quantity}
+                                onClick={() => tradeRealEstate(propertyName, quantity, 'buy')}
+                                className="bg-red-500 text-white py-3 px-3 rounded-xl text-base font-bold shadow-md hover:bg-red-600 transition-all duration-300 transform hover:scale-105"
+                              >
+                                {quantity}채 매입<br/>
+                                <span className="text-xs opacity-90">
+                                  {formatMoney(data.price * quantity)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                          
+                          <div className="text-base font-bold text-blue-600">매도</div>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[1, 2].map(quantity => (
+                              <button
+                                key={quantity}
+                                onClick={() => tradeRealEstate(propertyName, quantity, 'sell')}
+                                className="bg-blue-500 text-white py-3 px-3 rounded-xl text-base font-bold shadow-md hover:bg-blue-600 transition-all duration-300 transform hover:scale-105"
+                                disabled={(realEstate[propertyName]?.quantity || 0) < quantity}
+                              >
+                                {quantity}채 매도<br/>
+                                <span className="text-xs opacity-90">
+                                  {formatMoney(data.price * quantity)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Alert Dialog */}
+                {showAlertDialog && (
+                  <AlertDialog
+                    title={alertDialogContent.title}
+                    message={alertDialogContent.message}
+                    onClose={() => setShowAlertDialog(false)}
+                  />
+                )}
+              </div>
+            );
+          }
+
+          // Lottery App
+          if (currentApp === 'lottery') {
+            return (
+              <div className="max-w-sm mx-auto bg-gray-100 min-h-screen font-inter">
+                {/* Status Bar */}
+                <div className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                  <div className="flex justify-between items-center p-3 text-white text-sm">
+                    <span>9:41</span>
+                    <div className="flex items-center space-x-1">
+                      <span>●●●○○</span>
+                      <span className="ml-2">📶</span>
+                      <span>🔋100%</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white p-4 flex items-center shadow-md" style={{ marginTop: '50px' }}>
+                  <button onClick={() => { playButtonClickSound(); setCurrentApp('home'); }} className="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                    <ArrowLeft size={24} />
+                  </button>
+                  <h1 className="text-xl font-bold">복권</h1>
+                </div>
+                
+                <div className="p-4 space-y-6">
+                  <div className="bg-white rounded-xl p-4 shadow-lg border border-gray-200 text-center">
+                    <div className="text-sm text-gray-600">보유 현금</div>
+                    <div className="text-3xl font-bold text-yellow-700">{formatMoney(cash)}</div>
+                  </div>
+
+                  {/* Annuity Lottery */}
+                  <div className="bg-white rounded-xl p-4 shadow-lg border border-gray-200">
+                    <h2 className="text-xl font-bold text-gray-800 mb-3">연금 복권</h2>
+                    <p className="text-sm text-gray-600 mb-4">매주 당첨 번호를 확인하는 복권입니다. (즉시 당첨 확인)</p>
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-lg font-semibold text-gray-700">가격: {formatMoney(lotteryPrices.annuity)}</span>
+                      <span className="text-sm text-gray-500">오늘 구매 횟수: {lotteryPurchasesToday.annuity}/30</span>
+                      <button
+                        onClick={() => buyLotteryTicket('annuity')}
+                        className="bg-green-500 text-white py-2 px-4 rounded-xl font-bold shadow-md hover:bg-green-600 transition-all duration-300"
+                        disabled={lotteryPurchasesToday.annuity >= 30}
+                      >
+                        구매하기
+                      </button>
+                    </div>
+                    {pendingAnnuityLotteries.length > 0 && (
+                      <div className="mt-4 text-sm text-gray-600">
+                        <h3 className="font-bold mb-1">구매한 연금 복권:</h3>
+                        <ul className="list-disc list-inside">
+                          {pendingAnnuityLotteries.map(ticket => (
+                            <li key={ticket.id}>
+                              구매일: {ticket.purchaseDay}일, 결과 확인까지 {30 - (gameDay - ticket.purchaseDay)}일 남음
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Spitto Lottery */}
+                  <div className="bg-white rounded-xl p-4 shadow-lg border border-gray-200">
+                    <h2 className="text-xl font-bold text-gray-800 mb-3">스피또</h2>
+                    <p className="text-sm text-gray-600 mb-4">즉석에서 긁어 당첨을 확인하는 복권입니다.</p>
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-lg font-semibold text-gray-700">가격: {formatMoney(lotteryPrices.spitto)}</span>
+                      <span className="text-sm text-gray-500">오늘 구매 횟수: {lotteryPurchasesToday.spitto}/30</span>
+                      <button
+                        onClick={() => buyLotteryTicket('spitto')}
+                        className="bg-green-500 text-white py-2 px-4 rounded-xl font-bold shadow-md hover:bg-green-600 transition-all duration-300"
+                        disabled={lotteryPurchasesToday.spitto >= 30}
+                      >
+                        구매하기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {showAlertDialog && (
+                  <AlertDialog
+                    title={alertDialogContent.title}
+                    message={alertDialogContent.message}
+                    onClose={() => setShowAlertDialog(false)}
+                  />
+                )}
+              </div>
+            );
+          }
+
+
+          // TV App
+          if (currentApp === 'tv') {
+            return (
+              <div className="max-w-sm mx-auto bg-gray-900 min-h-screen font-inter">
+                  {/* Status Bar */}
+                  <div className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 shadow-lg">
+                    <div className="flex justify-between items-center p-3 text-white text-sm">
+                      <span>9:41</span>
+                      <div className="flex items-center space-x-1">
+                        <span>●●●○○</span>
+                        <span className="ml-2">📶</span>
+                        <span>🔋100%</span>
+                      </div>
+                    </div>
+                  </div>
+                
+                <div className="bg-gradient-to-r from-purple-500 to-pink-600 text-white p-4 flex items-center shadow-md" style={{ marginTop: '50px' }}>
+                    <button onClick={() => { playButtonClickSound(); setCurrentApp('home'); }} className="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                      <ArrowLeft size={24} />
+                    </button>
+                    <h1 className="text-xl font-bold">📺 TV</h1>
+                  </div>
+                
+                  <div className="grid grid-cols-1 gap-4 p-4">
+                    {Object.entries(tvChannels).map(([key, channel]) => (
+                      <button
+                        key={key}
+                        onClick={() => watchChannel(key)}
+                        className={`p-5 rounded-xl text-left transition-all duration-300 shadow-lg ${
+                          selectedChannel === key 
+                            ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white transform scale-[1.02]' 
+                            : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center mb-2">
+                          <span className="text-3xl mr-4">{channel.icon}</span>
+                          <div>
+                            <div className="font-bold text-lg">{channel.name}</div>
+                            <div className="text-sm opacity-80">{channel.description}</div>
+                          </div>
+                          {selectedChannel === key && (
+                            <Volume2 size={24} className="ml-auto text-yellow-300 animate-pulse" />
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {selectedChannel && (
+                    <div className="mt-6 bg-gray-800 rounded-xl p-5 shadow-lg border border-gray-700 mx-4">
+                      <div className="text-white text-center">
+                        <div className="text-xl font-bold mb-2">
+                          {tvChannels[selectedChannel].name} 시청 중
+                        </div>
+                        <div className="text-base opacity-80">
+                          {tvMessage && (
+                            <div className="mt-4 p-3 bg-gray-700 rounded-lg text-sm italic">
+                              "{tvMessage}"
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+              </div>
+            );
+          }
+
+          // Ending Screen
+          if (gameStage === 'ending' && selectedEnding) {
+            const ending = endings[selectedEnding];
+            const [showEpilogue, setShowEpilogue] = useState(false);
+            
+            return (
+              <div 
+                className="w-full h-screen flex flex-col items-center justify-center text-white text-center p-6 relative overflow-hidden font-inter"
+                style={{
+                  backgroundImage: `url(${ending.backgroundImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat'
+                }}
+              >
+                {/* Background Overlay */}
+                <div className="absolute inset-0 bg-black bg-opacity-60"></div>
+                
+                {/* Status Bar */}
+                <div className="fixed top-0 left-0 w-full z-50 bg-black bg-opacity-40 backdrop-blur-sm shadow-lg">
+                  <div className="flex justify-between items-center p-3 text-white text-sm max-w-sm mx-auto">
+                    <span>9:41</span>
+                    <div className="flex items-center space-x-1">
+                      <span>●●●○○</span>
+                      <span className="ml-2">📶</span>
+                      <span>🔋100%</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="relative z-10 max-w-md w-full mx-auto">
+                  {!showEpilogue ? (
+                    // Ending screen
+                    <>
+                      <div className="text-8xl mb-8 animate-fade-in-up">{ending.image}</div>
+                      <h1 className="text-4xl font-extrabold mb-6 drop-shadow-lg animate-fade-in-up-slow">{ending.title}</h1>
+                      <p className="text-xl mb-10 leading-relaxed drop-shadow-md animate-fade-in-up-slower">{ending.description}</p>
+                      <div className="space-y-4 w-full">
+                        <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-6 border border-white border-opacity-30 shadow-lg animate-fade-in">
+                          <div className="text-sm opacity-90">최종 자산</div>
+                          <div className="text-3xl font-bold">{formatMoney(getTotalAssets())}</div>
+                        </div>
+                        <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-6 border border-white border-opacity-30 shadow-lg animate-fade-in delay-100">
+                          <div className="text-sm opacity-90">플레이 시간</div>
+                          <div className="text-2xl font-bold">{gameDay}일</div>
+                        </div>
+                        
+                        {ending.epilogue && (
+                          <button
+                            onClick={() => { playButtonClickSound(); setShowEpilogue(true); }}
+                            className="w-full bg-white bg-opacity-30 backdrop-blur-sm text-white py-4 rounded-xl font-bold text-lg hover:bg-opacity-40 transition-all duration-300 border border-white border-opacity-30 shadow-lg animate-fade-in delay-200"
+                          >
+                            📖 에피로그 보기
+                          </button>
+                        )}
+                        
+                        <button
+                          onClick={() => { playButtonClickSound(); window.location.reload(); }}
+                          className="w-full bg-white text-gray-900 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all duration-300 shadow-xl animate-fade-in delay-300"
+                        >
+                          🔄 다시 시작하기
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    // Epilogue screen
+                    <>
+                      <div className="text-6xl mb-6 animate-fade-in-up">{ending.image}</div>
+                      <h2 className="text-3xl font-extrabold mb-8 drop-shadow-lg animate-fade-in-up-slow">{ending.epilogue.title}</h2>
+                      
+                      <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-6 mb-6 text-left border border-white border-opacity-30 shadow-lg animate-fade-in">
+                        <p className="text-lg leading-relaxed italic drop-shadow-sm">
+                          "{ending.epilogue.content}"
+                        </p>
+                      </div>
+                      
+                      <div className="bg-white bg-opacity-15 backdrop-blur-sm rounded-xl p-6 mb-8 text-left border border-white border-opacity-20 shadow-lg animate-fade-in delay-100">
+                        <h3 className="text-xl font-bold mb-4 drop-shadow-sm">그 후의 이야기</h3>
+                        <p className="text-base leading-relaxed drop-shadow-sm">
+                          {ending.epilogue.afterLife}
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <button
+                          onClick={() => { playButtonClickSound(); setShowEpilogue(false); }}
+                          className="w-full bg-white bg-opacity-30 backdrop-blur-sm text-white py-4 rounded-xl font-bold hover:bg-opacity-40 transition-all duration-300 border border-white border-opacity-30 shadow-lg animate-fade-in delay-200"
+                        >
+                          ← 뒤로 가기
+                        </button>
+                        <button
+                          onClick={() => { playButtonClickSound(); window.location.reload(); }}
+                          className="w-full bg-white text-gray-900 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all duration-300 shadow-xl animate-fade-in delay-300"
+                        >
+                          🔄 다시 시작하기
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          return null;
+        };
+
+        createRoot(document.getElementById('root')).render(<YunaStockGame />);
+    </script>
+</body>
+</html>
