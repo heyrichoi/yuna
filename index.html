@@ -1,0 +1,2174 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>유나 주식 게임</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        html, body {
+            height: 100%; /* Ensure html and body take full viewport height */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden; /* Prevent scroll on mobile */
+            background-color: #333; /* Dark solid background for PC view */
+            display: flex; /* Use flexbox for centering */
+            justify-content: center; /* Center horizontally */
+            align-items: center; /* Center vertically */
+        }
+        #app-container {
+            min-height: 100vh; /* Ensure app container takes full viewport height */
+            width: 100%; /* Take full width on small screens */
+            max-width: 420px; /* Max width for mobile-like experience on PC */
+            background-color: #f0f0f0; /* Light gray background for the app itself */
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5); /* Add some shadow for visual separation */
+            overflow-y: auto; /* Allow scrolling within the app container if content overflows */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            position: relative; /* For absolute positioning of children */
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-fade-in-up {
+            animation: fade-in-up 0.5s ease-out forwards;
+        }
+        .animate-fade-in-up-slow {
+            animation: fade-in-up 0.8s ease-out forwards;
+        }
+        .animate-fade-in-up-slower {
+            animation: fade-in-up 1.2s ease-out forwards;
+        }
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-bounce-once {
+            animation: bounce-once 1s ease-out;
+        }
+        @keyframes bounce-once {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container"></div>
+
+    <script>
+        // Game State Variables
+        let currentApp = 'home';
+        let gameStage = 'initialIntro';
+        let selectedEnding = null;
+        let recentGoodNews = false;
+        const initialAssets = 5000000;
+
+        // Audio Players (Tone.js)
+        let bgMusicPlayer;
+        let buttonClickPlayer;
+        let transactionPlayer;
+
+        // Episode states
+        let currentEpisode = null;
+        let currentSceneIndex = 0;
+        let activeLotteryBonus = 1; // 1 = normal, 2 = double chance
+
+        // TV state for persistent messages
+        let isTvOn = false;
+        let selectedChannel = null;
+        let tvMessage = '';
+        let tvMessageIntervalId = null;
+
+        // Game Data States
+        let cash = initialAssets;
+        let stress = 20;
+        let knowledge = 10;
+        let isEmployee = true;
+        let gameDay = 1;
+        let portfolio = {}; // Stores { 'StockName': { shares: N, avgPrice: M } }
+        
+        // Stock data and history
+        let stocks = {
+            '삼성전자': { price: 68000, change: 0, history: [68000] },
+            'SK하이닉스': { price: 85000, change: 0, history: [85000] },
+            'NAVER': { price: 240000, change: 0, history: [240000] },
+            '카카오': { price: 65000, change: 0, history: [65000] },
+            'LG화학': { price: 520000, change: 0, history: [520000] },
+            '현대자동차': { price: 180000, change: 0, history: [180000] }
+        };
+        
+        // Real Estate related
+        let realEstate = {}; // Stores { 'PropertyName': { quantity: N, avgPrice: M } }
+        let realEstateData = {
+            '강남 아파트': { price: 800000000, change: 0, rentYield: 0.02, description: '강남구 대치동 84㎡' },
+            '홍대 상가': { price: 300000000, change: 0, rentYield: 0.04, description: '마포구 홍익로 1층 상가' },
+            '판교 오피스텔': { price: 500000000, change: 0, rentYield: 0.03, description: '분당구 판교역 도보 5분' },
+            '부산 빌라': { price: 150000000, change: 0, rentYield: 0.05, description: '해운대구 전용 23㎡' },
+            '평창동 단독주택': { price: 1200000000, change: 0, rentYield: 0.015, description: '종로구 평창동 330㎡' },
+            '송도 신축 아파트': { price: 600000000, change: 0, rentYield: 0.025, description: '연수구 송도국제도시' },
+            '제주 펜션': { price: 400000000, change: 0, rentYield: 0.06, description: '서귀포시 해변가 펜션' },
+            '인천공항 근처 상가': { price: 250000000, change: 0, rentYield: 0.045, description: '중구 공항로 임대상가' }
+        };
+
+        // Message related (Logic for random events)
+        let messages = {
+            individual: [],
+            investors: [],
+            company: []
+        };
+        let unreadCounts = {
+            individual: 0,
+            investors: 0,
+            company: 0
+        };
+        let waitingForResponse = null;
+
+        // Sender profile pictures
+        const senderProfiles = {
+            '친구 민지': 'https://imgur.com/zhyQMSE.jpg',
+            '엄마': 'https://imgur.com/SqjZMsh.jpg',
+            '대학 선배': 'https://imgur.com/0W7n2v1.jpg',
+            '조상님': 'https://placehold.co/40x40/8B4513/FFFFFF?text=조상',
+            '산신령': 'https://placehold.co/40x40/008000/FFFFFF?text=산신',
+            '사우디 왕자': 'https://placehold.co/40x40/FFD700/000000?text=왕자',
+            '투자고수': 'https://placehold.co/40x40/FFD700/000000?text=고수',
+            '주린이123': 'https://placehold.co/40x40/FFD700/000000?text=주린이',
+            '부동산왕': 'https://placehold.co/40x40/FFD700/000000?text=부왕',
+            '회사': 'https://placehold.co/40x40/FFD700/000000?text=회사',
+            '팀장': 'https://placehold.co/40x40/FFD700/000000?text=팀장',
+            '동료 수진': 'https://placehold.co/40x40/FFD700/000000?text=수진',
+            '시스템': 'https://placehold.co/40x40/FFD700/000000?text=시스템',
+            '자동응답': 'https://placehold.co/40x40/FFD700/000000?text=자동',
+            '유나': 'https://imgur.com/Omc3nbn.jpg'
+        };
+        
+        // Alert Dialog State
+        let showAlertDialog = false;
+        let alertDialogContent = { title: '', message: '' };
+
+        // Lottery State
+        const lotteryPrices = { annuity: 50000, spitto: 10000 };
+        let lotteryPurchasesToday = { annuity: 0, spitto: 0 }; // Track daily purchases
+        let pendingAnnuityLotteries = [];
+
+        // Mission State
+        const missions = [
+            { id: 1, type: 'asset', target: 7000000, description: '총 자산 700만원 달성하기' },
+            { id: 2, type: 'buyStock', target: 5, description: '주식 총 5주 구매하기' },
+            { id: 3, type: 'asset', target: 15000000, description: '총 자산 1천5백만원 달성하기' },
+            { id: 4, type: 'buyRealEstate', target: 1, description: '부동산 1채 구매하기' },
+            { id: 5, type: 'asset', target: 50000000, description: '총 자산 5천만원 달성하기' },
+            { id: 6, type: 'asset', target: 100000000, description: '총 자산 1억원 달성하기 (퇴사 가능!)' },
+            { id: 7, type: 'asset', target: 500000000, description: '총 자산 5억원 달성하기' },
+            { id: 8, type: 'asset', target: 1000000000, description: '총 자산 10억원 달성하기 (최종 목표!)' },
+        ];
+        let currentMissionIndex = 0;
+
+        // TV Channel Data
+        const tvChannels = {
+            gossip: {
+                name: '찌라시 뉴스',
+                icon: '�',
+                description: '하이리스크 하이리턴 정보',
+                messages: [
+                    { text: '🔥 "삼성전자 내부 정보! 대박 날 것 같아요!"', impact: { '삼성전자': 0.15 }, accuracy: 0.3 },
+                    { text: '⚡ "카카오 관련 루머가 돌고 있습니다..."', impact: { '카카오': -0.08 }, accuracy: 0.4 },
+                    { text: '💥 "이번 주 SK하이닉스가 폭등한다는 소문!"', impact: { 'SK하이닉스': 0.12 }, accuracy: 0.25 },
+                    { text: '🚨 "NAVER 주가 조작설? 진실은 무엇일까요?"', impact: { 'NAVER': -0.10 }, accuracy: 0.2 }
+                ]
+            },
+            professional: {
+                name: '경제 전문채널',
+                icon: '📊',
+                description: '검증된 전문 정보',
+                messages: [
+                    { text: '📈 "분석 결과, 반도체 업종이 상승세를 보이고 있습니다."', impact: { '삼성전자': 0.05, 'SK하이닉스': 0.06 }, accuracy: 0.8 },
+                    { text: '📉 "플랫폼 기업들의 실적 우려가 커지고 있습니다."', impact: { 'NAVER': -0.04, '카카오': -0.03 }, accuracy: 0.75 },
+                    { text: '💼 "자동차 업계의 전기차 전환이 가속화되고 있습니다."', impact: { '현대자동차': 0.08 }, accuracy: 0.9 },
+                    { text: '🏭 "화학 업종의 원자재 가격 상승이 우려됩니다."', impact: { 'LG화학': -0.05 }, accuracy: 0.85 }
+                ]
+            },
+            market: {
+                name: '시장 현황',
+                icon: '📋',
+                description: '단순 시장 정보',
+                messages: [
+                    { text: '📊 "코스피 지수 현재 2,450포인트입니다."', impact: {}, accuracy: 1.0 },
+                    { text: '💹 "거래량이 평소보다 20% 증가했습니다."', impact: {}, accuracy: 1.0 },
+                    { text: '📈 "외국인 순매수세가 이어지고 있습니다."', impact: {}, accuracy: 1.0 },
+                    { text: '💱 "달러/원 환율 1,320원대에서 거래 중입니다."', impact: {}, accuracy: 1.0 }
+                ]
+            },
+            education: {
+                name: '투자 교육',
+                icon: '🎓',
+                description: '투자 지식 향상',
+                messages: [
+                    { text: '📚 "분산투자의 중요성을 알아보겠습니다."', impact: {}, accuracy: 1.0 },
+                    { text: '🧮 "PER과 PBR 지표 활용법을 설명드리겠습니다."', impact: {}, accuracy: 1.0 },
+                    { text: '📖 "장기투자 vs 단기투자, 어떤 것이 좋을까요?"', impact: {}, accuracy: 1.0 },
+                    { text: '💡 "리스크 관리의 핵심 원칙들을 살펴보겠습니다."', impact: {}, accuracy: 1.0 }
+                ]
+            },
+            entertainment: {
+                name: '연예 채널',
+                icon: '🎭',
+                description: '스트레스 해소',
+                messages: [
+                    { text: '🎬 "오늘의 연예 뉴스를 전해드립니다."', impact: {}, accuracy: 1.0 },
+                    { text: '🎵 "인기 아이돌 그룹의 새 앨범이 발매됩니다."', impact: {}, accuracy: 1.0 },
+                    { text: '📺 "화제의 드라마 시청률이 20%를 돌파했습니다."', impact: {}, accuracy: 1.0 },
+                    { text: '🎪 "주말 예능 프로그램 특집 방송이 있습니다."', impact: {}, accuracy: 1.0 }
+                ]
+            }
+        };
+
+        // Episode Data
+        const episodeData = [
+            {
+                id: 'ancestorDream',
+                title: '조상님의 꿈',
+                backgroundImage: 'https://imgur.com/amvRtMc.jpg',
+                scenes: [
+                    { type: 'monologue', speaker: '유나', content: '피곤한 몸을 이끌고 잠자리에 들었다. 꿈속에서 낯선 분이 나타났는데...' },
+                    { type: 'dialogue', speaker: '조상님', content: '흐음... 너의 앞날이 걱정되는구나. 내가 좋은 기운을 줄 테니 복권을 사보거라.' },
+                    { type: 'dialogue', speaker: '조상님', content: '5분 동안 로또 당첨 확률이 2배가 될 것이니, 이 기회를 놓치지 마라!' },
+                    { type: 'choices', speaker: '유나', content: '조상님의 말씀에 어떻게 반응할까?', choices: [
+                        { text: '감사합니다, 조상님!', outcome: () => { activeLotteryBonus = 2; setTimeout(() => activeLotteryBonus = 1, 300000); addMessage('individual', '시스템', '✨ 로또 당첨 확률 2배 보너스가 5분간 적용됩니다!'); } }
+                    ]}
+                ]
+            },
+            {
+                id: 'bitcoinSurge',
+                title: '잊고 있던 비트코인의 떡상',
+                backgroundImage: 'https://imgur.com/I2iNAqH.jpg',
+                scenes: [
+                    { type: 'monologue', speaker: '유나', content: '오랜만에 예전 노트북을 켜보았다. 왠지 모르게 낯선 프로그램이 눈에 띄는데...' },
+                    { type: 'dialogue', speaker: '시스템', content: '5년 전, 당신이 호기심에 구매했던 비트코인 0.001개가 엄청난 가치로 폭등했습니다!' },
+                    { type: 'dialogue', speaker: '시스템', content: '현재 가치: 1억 원!' },
+                    { type: 'choices', speaker: '유나', content: '이게 꿈인가 생시인가?', choices: [
+                        { text: '대박이다! 바로 현금화해야지!', outcome: () => { cash += 100000000; playTransactionSound(); addMessage('individual', '시스템', '💰 잊고 있던 비트코인으로 1억원을 획득했습니다!'); } }
+                    ]}
+                ]
+            },
+            {
+                id: 'goldenSilverAxe',
+                title: '금도끼 은도끼',
+                backgroundImage: 'https://imgur.com/ATB2Hsc.jpg',
+                scenes: [
+                    { type: 'monologue', speaker: '유나', content: '깊은 산속에서 길을 잃고 헤매던 중, 연못에 빠진 도끼를 발견했다. 그때 산신령이 나타나...' },
+                    { type: 'dialogue', speaker: '산신령', content: '이 금도끼가 네 도끼냐? 이 은도끼가 네 도끼냐?' },
+                    { type: 'choices', speaker: '유나', content: '어떤 도끼를 선택할까?', choices: [
+                        { text: '금도끼가 제 것입니다!', outcome: () => { cash += 20000000; playTransactionSound(); addMessage('individual', '시스템', '💰 금도끼를 선택하여 2천만원을 획득했습니다!'); } },
+                        { text: '은도끼가 제 것입니다!', outcome: () => { cash += 50000000; playTransactionSound(); addMessage('individual', '시스템', '💰 은도끼를 선택하여 5천만원을 획득했습니다!'); } }
+                    ]}
+                ]
+            },
+            {
+                id: 'saudiPrince',
+                title: '사우디 왕자를 구하다',
+                backgroundImage: 'https://imgur.com/i3xtdow.jpg',
+                scenes: [
+                    { type: 'monologue', speaker: '유나', content: '길을 걷던 중, 곤경에 처한 외국인을 발견했다. 왠지 모르게 범상치 않은 아우라가 느껴지는데...' },
+                    { type: 'dialogue', speaker: '사우디 왕자', content: '나를 구해줘서 고맙소. 나는 사우디아라비아의 왕자요. 그대의 은혜에 보답하겠소.' },
+                    { type: 'dialogue', speaker: '사우디 왕자', content: '이것은 그대에 대한 나의 작은 성의요. 부디 잘 사용해주시오.' },
+                    { type: 'choices', speaker: '유나', content: '왕자의 제안을 받아들일까?', choices: [
+                        { text: '감사합니다, 왕자님!', outcome: () => { cash += 100000000; playTransactionSound(); addMessage('individual', '시스템', '💰 사우디 왕자에게 1억원을 받았습니다!'); } }
+                    ]}
+                ]
+            },
+            {
+                id: 'foundCheck',
+                title: '길에서 발견한 1억 수표',
+                backgroundImage: 'https://imgur.com/1Kk7mZT.jpg',
+                scenes: [
+                    { type: 'monologue', speaker: '유나', content: '출근길, 길바닥에 떨어진 무언가를 발견했다. 자세히 보니 1억 원짜리 수표였다!' },
+                    { type: 'dialogue', speaker: '유나', content: '이걸 어떻게 해야 할까? 경찰서에 가져다줄까, 아니면 그냥 가질까?' },
+                    { type: 'choices', speaker: '유나', content: '어떤 선택을 할까?', choices: [
+                        { text: '경찰서에 가져다준다', outcome: () => { cash += 5000000; playTransactionSound(); addMessage('individual', '시스템', '💰 수표를 경찰서에 가져다주고 수고비 500만원을 받았습니다!'); } },
+                        { text: '아무도 모르게 가진다', outcome: () => {
+                            if (Math.random() < 0.5) {
+                                cash += 100000000;
+                                playTransactionSound();
+                                addMessage('individual', '시스템', '💰 몰래 가진 1억 수표를 성공적으로 현금화했습니다!');
+                            } else {
+                                cash = Math.max(0, cash - 10000000);
+                                addMessage('individual', '시스템', '🚨 수표를 몰래 가지려다 발각되어 벌금 1천만원을 냈습니다!');
+                            }
+                        }}
+                    ]}
+                ]
+            }
+        ];
+
+        // Ending Data
+        const endings = {
+            bankruptcy: {
+                title: '💸 파산...',
+                description: '모든 돈을 잃고 빈털터리가 되었습니다.',
+                image: '😭',
+                backgroundImage: 'https://i.imgur.com/0u6807w.png',
+                condition: () => getTotalAssets() < 500000,
+                epilogue: {
+                    title: '유나의 독백',
+                    content: '돈을 다 잃었지만... 배운 것도 많았어. 이제 다시 시작해야겠어. 회사로 다시 돌아가서 차근차근 다시 모아보자. 이번엔 더 신중하게...',
+                    afterLife: '유나는 다시 회사로 돌아가 성실하게 일하며 조금씩 저축을 시작했다. 투자의 쓴맛을 봤지만, 포기하지 않고 공부하며 준비하고 있다.'
+                }
+            },
+            backToWork: {
+                title: '🏢 복직',
+                description: '투자로 큰 수익은 없었지만 안정적인 직장으로 돌아갑니다.',
+                image: '👔',
+                backgroundImage: 'https://i.imgur.com/RrHjd3F.png',
+                condition: () => getTotalAssets() >= 3000000 && getTotalAssets() < 50000000 && stress >= 80,
+                epilogue: {
+                    title: '유나의 독백',
+                    content: '투자는 생각보다 어려웠어. 스트레스도 너무 많이 받았고... 그래도 완전히 망하지는 않았으니 다행이야. 회사 일이 그립네. 안정적인 월급이 최고인 것 같아.',
+                    afterLife: '유나는 회사로 복귀하여 안정적인 삶을 선택했다. 가끔 주식 뉴스를 보면서도 "역시 월급쟁이가 최고야"라고 중얼거린다.'
+                }
+            },
+            pyeongchangHouse: {
+                title: '🏘️ 평창동 생활',
+                description: '평창동 단독주택을 구매하고 여유로운 삶을 시작합니다.',
+                image: '🏡',
+                backgroundImage: 'https://i.imgur.com/XHqHQgA.png',
+                condition: () => realEstate['평창동 단독주택']?.quantity > 0,
+                epilogue: {
+                    title: '유나의 독백',
+                    content: '평창동 집이 정말 좋아. 넓은 마당에서 차 한 잔 마시며 미래를 계획해보니 마음이 평온해져. 이제 시작이야. 더 큰 꿈을 향해 차근차근 나아가자.',
+                    afterLife: '평창동 단독주택에서 여유로운 삶을 즐기는 유나. 매일 아침 마당에서 커피를 마시며 새로운 투자 기회를 모색한다. 이웃들과의 모임에서는 "투자의 여왕"으로 불린다.'
+                }
+            },
+            signielLife: {
+                title: '🏙️ 시그니엘의 여왕',
+                description: '주식 투자로 대성공하여 시그니엘에서 럭셔리한 삶을 즐깁니다.',
+                image: '👑',
+                backgroundImage: 'https://i.imgur.com/krLsjrs.png',
+                condition: () => {
+                    const stockValue = Object.entries(portfolio).reduce((total, [stock, data]) => {
+                        return total + (stocks[stock]?.price || 0) * (data.shares || 0);
+                    }, 0);
+                    return getTotalAssets() >= 500000000 && stockValue > getTotalAssets() * 0.6;
+                },
+                epilogue: {
+                    title: '유나의 독백',
+                    content: '시그니엘 최고층에서 내려다보는 서울의 야경이 정말 아름다워. 주식 투자로 이런 삶을 살 수 있게 되다니... 꿈만 같아. 이제 더 많은 사람들에게 투자의 기회를 알려주고 싶어.',
+                    afterLife: '시그니엘 펜트하우스에 거주하는 유나. 매일 아침 한강을 바라보며 글로벌 주식 시장을 체크한다. 유튜브 채널 "유나의 주식 라이프"를 운영하며 투자 노하우를 공유하고 있다.'
+                }
+            },
+            hawaiiLife: {
+                title: '🏝️ 하와이 생활',
+                description: '부동산 투자로 성공하여 하와이에서 자유로운 삶을 즐깁니다.',
+                image: '🌺',
+                backgroundImage: 'https://i.imgur.com/W8xi5Qm.png',
+                condition: () => {
+                    const realEstateValue = Object.entries(realEstate).reduce((total, [property, data]) => {
+                        return total + (realEstateData[property]?.price || 0) * (data.quantity || 0);
+                    }, 0);
+                    return getTotalAssets() >= 300000000 && realEstateValue > getTotalAssets() * 0.5;
+                },
+                epilogue: {
+                    title: '유나의 독백',
+                    content: '하와이 해변에서 보는 일몰이 정말 환상적이야. 부동산 임대료만으로도 이렇게 여유롭게 살 수 있다니... 한국의 빌딩들이 나를 먹여 살리고 있어. 이제 진짜 자유를 얻었어.',
+                    afterLife: '하와이 와이키키 해변가 콘도에서 생활하는 유나. 매달 한국에서 들어오는 임대료로 여유로운 삶을 즐긴다. 서핑과 요가를 배우며 진정한 라이프스타일을 만끽하고 있다.'
+                }
+            },
+            addictedTrader: {
+                title: '🎲 투자 중독',
+                description: '손실을 봤지만 투자를 포기하지 못하고 계속 도전합니다.',
+                image: '🔥',
+                backgroundImage: 'https://i.imgur.com/55TCUE2.png',
+                condition: () => getTotalAssets() < 8000000 && stress >= 90 && knowledge >= 80,
+                epilogue: {
+                    title: '유나의 독백',
+                    content: '돈은 많이 잃었지만... 이 스릴을 포기할 수 없어. 다음엔 분명 대박이 날 거야. 이렇게 많이 배웠는데 포기할 수는 없지. 한 번 더, 딱 한 번만 더!',
+                    afterLife: '작은 원룸에서 여전히 투자에 몰두하는 유나. 컵라면으로 끼니를 때우며 차트를 분석한다. "이번엔 다르다"는 말을 입에 달고 살지만, 그 열정만큼은 식지 않았다.'
+                }
+            },
+            megaSuccess: {
+                title: '💎 투자의 신',
+                description: '10억원을 달성한 진정한 투자의 달인이 되었습니다!',
+                image: '🚀',
+                backgroundImage: 'https://i.imgur.com/9lVUHT1.png',
+                condition: () => getTotalAssets() >= 1000000000,
+                epilogue: {
+                    title: '유나의 독백',
+                    content: '10억이라니... 정말 믿기지 않아. 이제 진짜 투자의 신이 된 기분이야. 하지만 여기서 끝이 아니야. 더 많은 사람들이 경제적 자유를 얻을 수 있도록 도와주고 싶어.',
+                    afterLife: '투자회사 "유나 캐피털"을 설립한 유나. 개인 투자자들을 위한 교육 프로그램을 운영하며, 매년 수십억 원의 수익을 올리고 있다. Forbes 선정 "주목할 만한 여성 투자자"에 선정되었다.'
+                }
+            }
+        };
+
+        // --- Utility Functions ---
+
+        // Calculate total assets
+        function getTotalAssets() {
+            const portfolioValue = Object.entries(portfolio).reduce((total, [stock, data]) => {
+                return total + (stocks[stock]?.price || 0) * (data.shares || 0);
+            }, 0);
+            
+            const realEstateValue = Object.entries(realEstate).reduce((total, [property, data]) => {
+                return total + (realEstateData[property]?.price || 0) * (data.quantity || 0);
+            }, 0);
+            
+            return cash + portfolioValue + realEstateValue;
+        }
+
+        // Format money to Korean currency string
+        function formatMoney(amount) {
+            if (amount >= 100000000) return `${(amount / 100000000).toFixed(1)}억원`;
+            if (amount >= 10000) return `${(amount / 10000).toFixed(0)}만원`;
+            return `${Math.round(amount).toLocaleString()}원`;
+        }
+
+        // Add message to game log
+        function addMessage(type, sender, content, isUser = false, choices = null) {
+            const newMessage = {
+                id: Date.now(),
+                sender,
+                content,
+                time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                isUser,
+                choices
+            };
+            
+            messages[type].push(newMessage);
+            
+            if (!isUser) {
+                unreadCounts[type]++;
+                if (choices) {
+                    waitingForResponse = { type, messageId: newMessage.id };
+                }
+            }
+            renderApp(currentApp); // Re-render to show new message
+        }
+
+        // Play button click sound
+        function playButtonClickSound() {
+            if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                    if (buttonClickPlayer && buttonClickPlayer.loaded) {
+                        buttonClickPlayer.stop();
+                        buttonClickPlayer.start();
+                    }
+                }).catch(error => console.error("Failed to play button sound:", error));
+            } else if (buttonClickPlayer && buttonClickPlayer.loaded) {
+                buttonClickPlayer.stop();
+                buttonClickPlayer.start();
+            }
+        }
+
+        // Play transaction sound
+        function playTransactionSound() {
+            if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                    if (transactionPlayer && transactionPlayer.loaded) {
+                        transactionPlayer.stop();
+                        transactionPlayer.start();
+                    }
+                }).catch(error => console.error("Failed to play transaction sound:", error));
+            } else if (transactionPlayer && transactionPlayer.loaded) {
+                transactionPlayer.stop();
+                transactionPlayer.start();
+            }
+        }
+
+        // Custom Alert Dialog (pure JS)
+        function showCustomAlertDialog(title, message, onClose) {
+            showAlertDialog = true;
+            alertDialogContent = { title, message };
+            renderApp(currentApp); // Re-render to show alert
+
+            // Add event listener to the dialog's close button
+            document.getElementById('alertDialogCloseButton')?.addEventListener('click', () => {
+                showAlertDialog = false;
+                if (onClose) onClose();
+                renderApp(currentApp); // Re-render to hide alert
+            });
+            // Also close on overlay click
+            document.getElementById('alertDialogOverlay')?.addEventListener('click', (e) => {
+                if (e.target.id === 'alertDialogOverlay') {
+                    showAlertDialog = false;
+                    if (onClose) onClose();
+                    renderApp(currentApp);
+                }
+            });
+        }
+
+        // --- Game Logic Functions ---
+
+        // Handle episode scene progression
+        function handleNextEpisodeScene() {
+            playButtonClickSound();
+            if (currentSceneIndex < currentEpisode.scenes.length - 1) {
+                currentSceneIndex++;
+            } else {
+                currentEpisode = null;
+                currentSceneIndex = 0;
+                gameStage = 'playing';
+            }
+            renderApp(gameStage); // Re-render episode or transition to playing
+        }
+
+        // Handle episode choices
+        function handleEpisodeChoice(outcomeFunction) {
+            outcomeFunction();
+            handleNextEpisodeScene();
+        }
+
+        // Handle user choice in prologue/messages
+        function selectChoice(choiceText, originalMessageId) {
+            playButtonClickSound();
+            addMessage('individual', '유나', choiceText, true);
+            
+            if (choiceText.includes('정말요? 더 자세히 알려주세요') || choiceText.includes('좋은 정보 감사해요!')) {
+                gameStage = 'playing'; // Transition to playing stage
+            }
+            
+            waitingForResponse = null;
+            
+            setTimeout(() => {
+                const responses = [
+                    '네, 알겠습니다!', '좋은 정보 감사합니다!', '현명한 판단이네요.', '저도 그렇게 생각해요!',
+                    '더 자세히 알려주세요!', '흥미롭네요.', '고민해볼게요.', '알겠습니다, 참고할게요.',
+                    '정말 기대되네요!', '최고의 선택입니다!', '힘내세요!', '화이팅!',
+                    '성투하세요!', '대박나세요!', '조심하세요!'
+                ];
+                const response = responses[Math.floor(Math.random() * responses.length)];
+                addMessage('individual', '자동응답', response);
+            }, 1500);
+            renderApp(currentApp); // Re-render to update messages and potentially switch stage
+        }
+
+        // Trade Stock
+        function tradeStock(stockName, quantity, type) {
+            playButtonClickSound();
+            const stockInfo = stocks[stockName];
+            if (!stockInfo) {
+                showCustomAlertDialog('오류', '존재하지 않는 주식입니다.');
+                return;
+            }
+
+            if (type === 'buy') {
+                const cost = stockInfo.price * quantity;
+                if (cash >= cost) {
+                    cash -= cost;
+                    const currentShares = portfolio[stockName]?.shares || 0;
+                    const currentAvgPrice = portfolio[stockName]?.avgPrice || 0;
+
+                    const newTotalCost = (currentShares * currentAvgPrice) + (stockInfo.price * quantity);
+                    const newTotalShares = currentShares + quantity;
+                    const newAvgPrice = newTotalShares > 0 ? newTotalCost / newTotalShares : 0;
+
+                    portfolio[stockName] = {
+                        shares: newTotalShares,
+                        avgPrice: newAvgPrice
+                    };
+                    stress = Math.min(100, stress + 3);
+                    knowledge = Math.min(100, knowledge + 1);
+                    playTransactionSound();
+                } else {
+                    showCustomAlertDialog('자금 부족!', `주식을 매수하기 위한 현금이 부족합니다. 필요한 금액: ${formatMoney(cost - cash)}`);
+                }
+            } else { // type === 'sell'
+                if ((portfolio[stockName]?.shares || 0) >= quantity) {
+                    const sale = stockInfo.price * quantity;
+                    cash += sale;
+                    const currentShares = portfolio[stockName].shares;
+                    const currentAvgPrice = portfolio[stockName].avgPrice;
+                    const remainingShares = currentShares - quantity;
+
+                    if (remainingShares === 0) {
+                        delete portfolio[stockName];
+                    } else {
+                        portfolio[stockName] = {
+                            shares: remainingShares,
+                            avgPrice: currentAvgPrice
+                        };
+                    }
+                    stress = Math.min(100, stress + 2);
+                    knowledge = Math.min(100, knowledge + 1);
+                    playTransactionSound();
+                } else {
+                    showCustomAlertDialog('보유 수량 부족!', `매도하려는 주식(${stockName})의 수량이 부족합니다. 보유 수량: ${portfolio[stockName]?.shares || 0}주`);
+                }
+            }
+            renderApp(currentApp); // Re-render to update UI
+        }
+
+        // Trade Real Estate
+        function tradeRealEstate(propertyName, quantity, type) {
+            playButtonClickSound();
+            const propertyInfo = realEstateData[propertyName];
+            if (!propertyInfo) {
+                showCustomAlertDialog('오류', '존재하지 않는 부동산입니다.');
+                return;
+            }
+
+            if (type === 'buy') {
+                const cost = propertyInfo.price * quantity;
+                if (cash >= cost) {
+                    cash -= cost;
+                    const currentQuantity = realEstate[propertyName]?.quantity || 0;
+                    const currentAvgPrice = realEstate[propertyName]?.avgPrice || 0;
+
+                    const newTotalCost = (currentQuantity * currentAvgPrice) + (propertyInfo.price * quantity);
+                    const newTotalQuantity = currentQuantity + quantity;
+                    const newAvgPrice = newTotalQuantity > 0 ? newTotalCost / newTotalQuantity : 0;
+
+                    realEstate[propertyName] = {
+                        quantity: newTotalQuantity,
+                        avgPrice: newAvgPrice
+                    };
+                    stress = Math.min(100, stress + 2);
+                    knowledge = Math.min(100, knowledge + 1);
+                    playTransactionSound();
+                } else {
+                    showCustomAlertDialog('자금 부족!', `부동산을 매입하기 위한 현금이 부족합니다. 필요한 금액: ${formatMoney(cost - cash)}`);
+                }
+            } else { // type === 'sell'
+                if ((realEstate[propertyName]?.quantity || 0) >= quantity) {
+                    const sale = propertyInfo.price * quantity;
+                    cash += sale;
+                    const currentQuantity = realEstate[propertyName].quantity;
+                    const currentAvgPrice = realEstate[propertyName].avgPrice;
+                    const remainingQuantity = currentQuantity - quantity;
+
+                    if (remainingQuantity === 0) {
+                        delete realEstate[propertyName];
+                    } else {
+                        realEstate[propertyName] = {
+                            quantity: remainingQuantity,
+                            avgPrice: currentAvgPrice
+                        };
+                    }
+                    stress = Math.min(100, stress + 1);
+                    knowledge = Math.min(100, knowledge + 1);
+                    playTransactionSound();
+                } else {
+                    showCustomAlertDialog('보유 수량 부족!', `매도하려는 부동산(${propertyName})의 수량이 부족합니다. 보유 수량: ${realEstate[propertyName]?.quantity || 0}채`);
+                }
+            }
+            renderApp(currentApp); // Re-render to update UI
+        }
+
+        // Buy lottery ticket
+        function buyLotteryTicket(type) {
+            playButtonClickSound();
+            const price = lotteryPrices[type];
+            if (cash < price) {
+                showCustomAlertDialog('자금 부족!', `복권을 구매하기 위한 현금이 부족합니다. 필요한 금액: ${formatMoney(price - cash)}`);
+                return;
+            }
+            if (lotteryPurchasesToday[type] >= 30) {
+                showCustomAlertDialog('구매 제한!', `오늘은 ${type === 'annuity' ? '연금 복권' : '스피또'}를 더 이상 구매할 수 없습니다. (일일 30회 제한)`);
+                return;
+            }
+
+            cash -= price;
+            lotteryPurchasesToday[type]++;
+
+            let winMessage = `복권 구매: ${formatMoney(price)} 사용.`;
+            let winAmount = 0;
+
+            if (type === 'annuity') {
+                const winChance = Math.random();
+                let effectiveWinChance = winChance;
+                if (activeLotteryBonus === 2) {
+                    effectiveWinChance /= 2;
+                }
+
+                if (effectiveWinChance < 0.01) {
+                    winAmount = 500000000;
+                    winMessage = `🎉 연금 복권 1등 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`;
+                } else if (effectiveWinChance < 0.1) {
+                    winAmount = 5000000;
+                    winMessage = `✨ 연금 복권 2등 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`;
+                } else if (effectiveWinChance < 0.3) {
+                    winAmount = 500000;
+                    winMessage = `🍀 연금 복권 3등 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`;
+                } else {
+                    winMessage = `꽝! 다음 기회에... 연금 복권 ${formatMoney(price)} 사용. (1개월 후 확인)`;
+                }
+                pendingAnnuityLotteries.push({
+                    id: Date.now(),
+                    purchaseDay: gameDay,
+                    potentialWinAmount: winAmount,
+                    winMessage: winMessage
+                });
+                showCustomAlertDialog('연금 복권 구매 완료', winMessage.includes('꽝') ? `연금 복권을 구매했습니다. 결과는 1개월 후에 확인됩니다.` : `연금 복권 당첨! ${formatMoney(winAmount)} 획득! (1개월 후 지급)`);
+            } else if (type === 'spitto') {
+                const winChance = Math.random();
+                let effectiveWinChance = winChance;
+                if (activeLotteryBonus === 2) {
+                    effectiveWinChance /= 2;
+                }
+
+                if (effectiveWinChance < 0.02) {
+                    winAmount = 10000000;
+                    winMessage = `🎉 스피또 1등 당첨! ${formatMoney(winAmount)} 획득!`;
+                } else if (effectiveWinChance < 0.15) {
+                    winAmount = 100000;
+                    winMessage = `✨ 스피또 2등 당첨! ${formatMoney(winAmount)} 획득!`;
+                } else {
+                    winMessage = `꽝! 다음 기회에... 스피또 ${formatMoney(price)} 사용.`;
+                }
+                cash += winAmount;
+                addMessage('individual', '시스템', winMessage);
+                playTransactionSound();
+                showCustomAlertDialog('스피또 결과', winMessage);
+            }
+            renderApp(currentApp); // Re-render to update UI
+        }
+
+        // Watch TV Channel
+        function watchChannel(channelKeyFromClick) {
+            playButtonClickSound();
+
+            // Clear previous interval if exists
+            if (tvMessageIntervalId) {
+                clearInterval(tvMessageIntervalId);
+                tvMessageIntervalId = null;
+            }
+
+            // If clicking the currently selected channel, turn off TV
+            if (isTvOn && selectedChannel === channelKeyFromClick) {
+                isTvOn = false;
+                selectedChannel = null;
+                tvMessage = '';
+                // No renderApp here, as the TV button in home will handle the app switch
+            } else {
+                // If TV is off or a different channel is selected, turn on/switch channel
+                isTvOn = true;
+                selectedChannel = channelKeyFromClick;
+                
+                const channel = tvChannels[selectedChannel]; // Use selectedChannel directly
+                if (!channel) {
+                    console.error("Invalid channel selected:", selectedChannel);
+                    tvMessage = "채널 정보를 불러올 수 없습니다.";
+                    renderApp(currentApp);
+                    return;
+                }
+
+                let messageIndex = 0;
+                const channelMessages = channel.messages;
+                
+                if (channelMessages.length > 0) {
+                    tvMessage = channelMessages[messageIndex].text;
+                    messageIndex = (messageIndex + 1) % channelMessages.length;
+                } else {
+                    tvMessage = '';
+                }
+
+                tvMessageIntervalId = setInterval(() => {
+                    if (channelMessages.length > 0) {
+                        tvMessage = channelMessages[messageIndex].text;
+                        messageIndex = (messageIndex + 1) % channelMessages.length;
+                    } else {
+                        tvMessage = '';
+                    }
+                    renderApp(currentApp); // Re-render to update TV message
+                }, 30000);
+                
+                const randomMessage = channel.messages[Math.floor(Math.random() * channel.messages.length)];
+                
+                if (randomMessage.impact && Object.keys(randomMessage.impact).length > 0) {
+                    const hasPositiveImpact = Object.values(randomMessage.impact).some(impact => impact > 0);
+                    if (hasPositiveImpact) {
+                        recentGoodNews = true;
+                        setTimeout(() => { recentGoodNews = false; renderApp(currentApp); }, 15000);
+                    }
+                }
+                
+                switch(selectedChannel) { // Use selectedChannel
+                    case 'gossip':
+                        stress = Math.min(100, stress + 5);
+                        break;
+                    case 'education':
+                        knowledge = Math.min(100, knowledge + 3);
+                        break;
+                    case 'entertainment':
+                        stress = Math.max(0, stress - 5);
+                        break;
+                    default:
+                        break;
+                }
+                
+                if (randomMessage.impact && Object.keys(randomMessage.impact).length > 0) {
+                    const shouldApply = Math.random() < randomMessage.accuracy;
+                    if (shouldApply) {
+                        setTimeout(() => {
+                            const newStocks = { ...stocks };
+                            Object.entries(randomMessage.impact).forEach(([stockName, impactPercent]) => {
+                                if (newStocks[stockName]) {
+                                    const newPrice = Math.round(newStocks[stockName].price * (1 + impactPercent));
+                                    newStocks[stockName] = {
+                                        ...newStocks[stockName],
+                                        price: Math.max(1000, newPrice),
+                                        change: impactPercent,
+                                        history: [...newStocks[stockName].history.slice(-19), Math.max(1000, newPrice)]
+                                    };
+                                }
+                            });
+                            stocks = newStocks;
+                            renderApp(currentApp); // Re-render after stock impact
+                        }, 2000);
+                    }
+                }
+            }
+            renderApp(currentApp); // Re-render to update TV state and possibly stats
+        }
+
+        // --- Game Loop and Initialization ---
+
+        let gameTimeIntervalId = null;
+        let stockUpdateIntervalId = null;
+
+        function startGameLoops() {
+            // Stock & Real Estate Price Update Loop
+            stockUpdateIntervalId = setInterval(() => {
+                if (gameStage === 'playing') {
+                    // Update Stocks
+                    const newStocks = { ...stocks };
+                    Object.keys(newStocks).forEach(stockName => {
+                        const changePercent = (Math.random() - 0.5) * 0.15;
+                        const newPrice = Math.round(newStocks[stockName].price * (1 + changePercent));
+                        const finalPrice = Math.max(1000, newPrice);
+                        
+                        newStocks[stockName] = {
+                            ...newStocks[stockName],
+                            price: finalPrice,
+                            change: changePercent,
+                            history: [...newStocks[stockName].history.slice(-19), finalPrice]
+                        };
+                    });
+                    stocks = newStocks;
+                    
+                    // Update Real Estate
+                    const newRealEstateData = { ...realEstateData };
+                    Object.keys(newRealEstateData).forEach(propertyName => {
+                        const changePercent = (Math.random() - 0.5) * 0.02;
+                        const newPrice = newRealEstateData[propertyName].price * (1 + changePercent);
+                        
+                        newRealEstateData[propertyName] = {
+                            ...newRealEstateData[propertyName],
+                            price: Math.max(50000000, Math.round(newPrice)),
+                            change: changePercent
+                        };
+                    });
+                    realEstateData = newRealEstateData;
+                    renderApp(currentApp); // Re-render to show price changes
+                }
+            }, 3000);
+
+            // Game Time Progression & Events Loop
+            gameTimeIntervalId = setInterval(() => {
+                if (gameStage === 'playing') {
+                    gameDay++;
+                    
+                    // Monthly Salary
+                    if (gameDay % 30 === 0 && gameDay !== 0 && isEmployee) {
+                        cash += 3000000;
+                        addMessage('individual', '회사', '월급 300만원이 입금되었습니다!');
+                    }
+
+                    // Reset lottery purchases at the start of a new month (every 30 days)
+                    if (gameDay % 30 === 1) {
+                        lotteryPurchasesToday = { annuity: 0, spitto: 0 };
+                    }
+
+                    // Process pending annuity lotteries
+                    const newPending = [];
+                    pendingAnnuityLotteries.forEach(ticket => {
+                        if (gameDay - ticket.purchaseDay >= 30) {
+                            cash += ticket.potentialWinAmount;
+                            addMessage('individual', '시스템', ticket.winMessage);
+                            playTransactionSound();
+                        } else {
+                            newPending.push(ticket);
+                        }
+                    });
+                    pendingAnnuityLotteries = newPending;
+                    
+                    // Monthly Rent Income
+                    if (gameDay % 30 === 0 && gameDay !== 0) {
+                        let totalRent = 0;
+                        Object.entries(realEstate).forEach(([property, data]) => {
+                            const monthlyRent = realEstateData[property].price * realEstateData[property].rentYield / 12 * (data.quantity || 0);
+                            totalRent += monthlyRent;
+                        });
+                        
+                        if (totalRent > 0) {
+                            cash += totalRent;
+                            addMessage('individual', '시스템', `💰 부동산 임대수익 ${formatMoney(totalRent)}이 입금되었습니다!`);
+                        }
+                    }
+                    
+                    // Decrease stress over time
+                    stress = Math.max(0, stress - 1);
+                    
+                    // Random Episode Trigger (Every 30 game days, 20% chance, only if not already in episode)
+                    if (gameDay % 30 === 0 && gameDay !== 0 && Math.random() < 0.2 && !currentEpisode) {
+                        const randomIndex = Math.floor(Math.random() * episodeData.length);
+                        currentEpisode = episodeData[randomIndex];
+                        currentSceneIndex = 0;
+                        gameStage = 'episode';
+                    }
+                    
+                    // Random messages
+                    if (Math.random() < 0.15) {
+                        const messageScenarios = [
+                            { type: 'individual', sender: '엄마', content: '유나야, 옆집 아줌마가 부동산이 더 안전하다던데? 너도 한번 알아봐.', choices: ['엄마 말씀이 맞는 것 같아요', '주식이 더 수익성이 좋아요'] },
+                            { type: 'individual', sender: '대학 선배', content: '후배야~ 내가 증권사에서 일하는데, 요즘 LG화학 좀 위험해 보여. 조심해.', choices: ['선배 정보 감사합니다!', '더 자세히 알려주세요'] },
+                            { type: 'individual', sender: '친구 민지', content: '오늘 점심 뭐 먹지? 주식 생각하느라 배고픈 것도 잊었네 ㅋㅋㅋ', choices: ['맛있는거 먹고 힘내!', '주식 생각은 그만!'] },
+                            { type: 'individual', sender: '엄마', content: '유나야, 건강 잘 챙겨가면서 해. 돈도 좋지만 건강이 최고야.', choices: ['네 엄마 걱정마세요!', '알겠습니다.'] },
+                            { type: 'individual', sender: '대학 선배', content: '글로벌 경제 상황이 심상치 않아. 포트폴리오 점검해봐.', choices: ['알겠습니다 선배님!', '어떤 부분을 봐야 할까요?'] },
+                            
+                            // Investor group messages
+                            {
+                                type: 'investors',
+                                sender: '투자고수',
+                                content: '여러분, 제가 20년 투자하면서 느낀 건데요. 분산투자가 정말 중요해요. 한 종목에 올인하지 마세요!',
+                                choices: ['정말 좋은 조언이네요!', '구체적인 비율이 궁금해요']
+                            },
+                            {
+                                type: 'investors',
+                                sender: '주린이123',
+                                content: '혹시 카카오 지금 사도 될까요? 너무 많이 떨어진 것 같은데...',
+                                choices: ['저도 고민 중이에요', '좀 더 지켜보세요']
+                            },
+                            {
+                                type: 'investors',
+                                sender: '부동산왕',
+                                content: '주식보다는 부동산이 안전하죠. 저는 강남 아파트 3채 있는데 매달 임대료만 1000만원이에요 ㅎㅎ',
+                                choices: ['부럽습니다!', '부동산도 관심있어요']
+                            },
+                            {
+                                type: 'investors',
+                                sender: '단타의신',
+                                content: '오늘 삼성전자 단타로 500만원 벌었다! 역시 단타가 최고지!',
+                                choices: ['대단하시네요!', '리스크가 크지 않나요?']
+                            },
+                            {
+                                type: 'investors',
+                                sender: '가치투자자',
+                                content: '기업의 가치를 보고 투자하세요. 단기적인 등락에 일희일비하지 마시고요.',
+                                choices: ['명심하겠습니다!', '어떤 기업이 좋을까요?']
+                            },
+                            {
+                                type: 'investors',
+                                sender: '경제전문가',
+                                content: '최근 금리 인상 가능성이 높아지고 있습니다. 시장에 유의하세요.',
+                                choices: ['중요한 정보네요!', '어떤 종목에 영향을 줄까요?']
+                            },
+                            {
+                                type: 'investors',
+                                sender: '새내기투자',
+                                content: '아.. 오늘 -10% 손실봤어요 ㅠㅠ 멘탈이 나가네요...',
+                                choices: ['힘내세요!', '손절도 중요해요.']
+                            },
+                            
+                            // Company messages (only if employee)
+                            ...(isEmployee ? [{
+                                type: 'company',
+                                sender: '팀장',
+                                content: '유나씨, 요즘 업무에 집중 안되는 것 같은데 괜찮나요? 투자 때문에 신경쓰이시죠?',
+                                choices: ['죄송합니다, 집중하겠습니다', '괜찮습니다!']
+                            },
+                            {
+                                type: 'company',
+                                sender: '동료 수진',
+                                content: '유나야, 나도 주식 하고 싶은데 어떤 거 사면 좋을까? 초보자도 할 수 있어?',
+                                choices: ['같이 공부해봐요!', '신중하게 시작하세요']
+                            },
+                            {
+                                type: 'company',
+                                sender: '팀장',
+                                content: '다음주까지 보고서 제출인데, 유나씨 진행 상황 공유 부탁드립니다.',
+                                choices: ['네 팀장님 바로 공유드리겠습니다.', '조금 더 시간이 필요합니다.']
+                            },
+                            {
+                                type: 'company',
+                                sender: '동료 수진',
+                                content: '오늘 회식인데 올거지? 스트레스 풀자!',
+                                choices: ['당연하죠!', '죄송해요 선약이 있어요.']
+                            },
+                            {
+                                type: 'company',
+                                sender: '팀장',
+                                content: '유나씨, 이번 프로젝트 성과가 아주 좋네요. 수고 많으셨습니다!',
+                                choices: ['감사합니다 팀장님!', '더 열심히 하겠습니다!']
+                            },
+                            {
+                                type: 'company',
+                                sender: '동료 수진',
+                                content: '나 이번에 승진했어! 유나 너도 곧 승진할거야!',
+                                choices: ['축하해 수진아!', '나도 얼른 승진해야지!']
+                            }
+                            ] : [])
+                        ];
+                        
+                        const randomScenario = messageScenarios[Math.floor(Math.random() * messageScenarios.length)];
+                        addMessage('individual', randomScenario.sender, randomScenario.content, false, randomScenario.choices);
+                    }
+                    
+                    // Check mission completion
+                    checkMissionCompletion();
+
+                    // Check endings - in order of priority
+                    checkEndings();
+                    renderApp(currentApp); // Re-render to update game stats and potentially switch stage
+                }
+            }, 4000);
+        }
+
+        function stopGameLoops() {
+            if (gameTimeIntervalId) clearInterval(gameTimeIntervalId);
+            if (stockUpdateIntervalId) clearInterval(stockUpdateIntervalId);
+            if (tvMessageIntervalId) clearInterval(tvMessageIntervalId);
+            gameTimeIntervalId = null;
+            stockUpdateIntervalId = null;
+            tvMessageIntervalId = null;
+        }
+
+        function checkMissionCompletion() {
+            if (currentMissionIndex >= missions.length) return;
+
+            const mission = missions[currentMissionIndex];
+            let isCompleted = false;
+
+            if (mission.type === 'asset') {
+                if (getTotalAssets() >= mission.target) {
+                    isCompleted = true;
+                }
+            } else if (mission.type === 'buyStock') {
+                const totalStocksOwned = Object.values(portfolio).reduce((sum, stock) => sum + (stock.shares || 0), 0);
+                if (totalStocksOwned >= mission.target) {
+                    isCompleted = true;
+                }
+            } else if (mission.type === 'buyRealEstate') {
+                const totalRealEstateOwned = Object.values(realEstate).reduce((sum, prop) => sum + (prop.quantity || 0), 0);
+                if (totalRealEstateOwned >= mission.target) {
+                    isCompleted = true;
+                }
+            }
+
+            if (isCompleted) {
+                addMessage('individual', '시스템', `✅ 미션 달성: ${mission.description}`);
+                playTransactionSound();
+                currentMissionIndex++;
+                showCustomAlertDialog('미션 달성!', `축하합니다! '${mission.description}' 미션을 달성했습니다!`);
+            }
+        }
+
+        function checkEndings() {
+            for (const key in endings) {
+                if (endings[key].condition()) {
+                    selectedEnding = key;
+                    gameStage = 'ending';
+                    stopGameLoops(); // Stop game loops when an ending is reached
+                    renderApp('ending'); // Render ending screen
+                    return;
+                }
+            }
+        }
+
+        // --- Render Functions for different Apps/Stages ---
+
+        function renderInitialIntro() {
+            const appContainer = document.getElementById('app-container');
+            appContainer.innerHTML = `
+                <div class="max-w-sm mx-auto min-h-screen relative overflow-hidden font-inter flex flex-col items-center justify-end p-6"
+                    style="background-image: url(https://imgur.com/sjQzlH5.jpg); background-size: cover; background-position: center bottom; background-repeat: no-repeat; transition: background-image 1s ease-in-out;">
+                    <img 
+                        src="https://imgur.com/Omc3nbn.jpg" 
+                        alt="유나 로고" 
+                        class="relative z-10 w-40 h-40 object-contain mb-16 animate-float cursor-pointer"
+                        id="introLogo"
+                        onerror="this.onerror=null; this.src='https://placehold.co/160x160/aabbcc/ffffff?text=Logo';" 
+                    />
+                </div>
+            `;
+            document.getElementById('introLogo').addEventListener('click', () => {
+                Tone.start();
+                gameStage = 'prologue';
+                renderApp('prologue');
+            });
+        }
+
+        function renderPrologue() {
+            const appContainer = document.getElementById('app-container');
+            appContainer.innerHTML = `
+                <div class="max-w-sm mx-auto min-h-screen flex flex-col bg-gray-100 font-inter">
+                    <!-- Status Bar -->
+                    <div class="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                        <div class="flex justify-between items-center p-3 text-white text-sm">
+                            <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div class="flex items-center space-x-1">
+                                <span>●●●○○</span>
+                                <span class="ml-2">📶</span>
+                                <span>🔋100%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Header -->
+                    <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4 flex items-center shadow-md" style="margin-top: 48px;">
+                        <h1 class="text-xl font-bold">친구 민지</h1>
+                    </div>
+                    
+                    <!-- Chat Messages Area -->
+                    <div class="flex-1 p-4 overflow-y-auto custom-scrollbar" id="chatMessagesArea">
+                        <!-- Messages will be injected here -->
+                    </div>
+                    
+                    <!-- Message Input -->
+                    <div class="p-4 border-t border-gray-200 flex bg-white shadow-inner">
+                        <input
+                            type="text"
+                            id="chatInput"
+                            placeholder="메시지를 입력하세요..."
+                            class="flex-1 border border-gray-300 rounded-full px-4 py-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            disabled
+                        />
+                        <button
+                            id="sendMessageButton"
+                            class="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-3 rounded-full shadow-md hover:from-green-600 hover:to-emerald-700 transition-all duration-300"
+                            disabled
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send"><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M15 7l-6 6"/></svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // Initial prologue messages
+            if (messages.individual.length === 0) {
+                setTimeout(() => {
+                    addMessage('individual', '친구 민지', '야! 너 요즘 회사만 다니느라 지쳐 보이드라 ㅠㅠ', false);
+                    renderMessages('individual');
+                }, 1000);
+                setTimeout(() => {
+                    addMessage('individual', '친구 민지', '나 최근에 주식 시작했는데, 완전 신세계야! 너도 한번 해볼래? 🚀', false, [
+                        '정말요? 더 자세히 알려주세요'
+                    ]);
+                    renderMessages('individual');
+                }, 3000);
+            } else {
+                renderMessages('individual');
+            }
+        }
+
+        function renderMessages(type) {
+            const chatMessagesArea = document.getElementById('chatMessagesArea');
+            if (!chatMessagesArea) return;
+
+            let messagesHtml = '';
+            messages[type].forEach(msg => {
+                const profileImg = senderProfiles[msg.sender] || "https://placehold.co/40x40/FFD700/000000?text=?";
+                messagesHtml += `
+                    <div class="mb-4 flex ${msg.isUser ? 'justify-end' : 'justify-start'}">
+                        ${!msg.isUser ? `<img src="${profileImg}" alt="프로필" class="w-10 h-10 rounded-full mr-3 self-end" />` : ''}
+                        <div class="inline-block max-w-[70%] p-3 rounded-xl shadow-sm ${
+                            msg.isUser ? 'bg-green-500 text-white rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                        }">
+                            ${!msg.isUser ? `<div class="text-xs font-bold mb-1 text-gray-700">${msg.sender}</div>` : ''}
+                            <div>${msg.content}</div>
+                            <div class="text-xs opacity-70 mt-1 ${msg.isUser ? 'text-green-100' : 'text-gray-400'}">${msg.time}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            chatMessagesArea.innerHTML = messagesHtml;
+            chatMessagesArea.scrollTop = chatMessagesArea.scrollHeight; // Scroll to bottom
+
+            // Render choices if available
+            const lastMessage = messages[type][messages[type].length - 1];
+            if (waitingForResponse && lastMessage && lastMessage.id === waitingForResponse.messageId && lastMessage.choices) {
+                let choicesHtml = '<div class="mt-4 space-y-2 flex flex-col items-center">';
+                lastMessage.choices.forEach((choice, index) => {
+                    choicesHtml += `
+                        <button
+                            id="choice-${index}"
+                            class="w-11/12 bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-3 rounded-lg text-sm font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all duration-300 shadow-md"
+                        >
+                            ${choice}
+                        </button>
+                    `;
+                });
+                choicesHtml += '</div>';
+                chatMessagesArea.insertAdjacentHTML('beforeend', choicesHtml);
+
+                lastMessage.choices.forEach((choice, index) => {
+                    document.getElementById(`choice-${index}`).addEventListener('click', () => {
+                        selectChoice(choice, lastMessage.id);
+                    });
+                });
+            }
+        }
+
+        function renderHome() {
+            const appContainer = document.getElementById('app-container');
+            const returnRate = ((getTotalAssets() - initialAssets) / initialAssets) * 100;
+            const returnRateColor = returnRate >= 0 ? 'text-red-400' : 'text-blue-400';
+
+            appContainer.innerHTML = `
+                <div class="max-w-sm mx-auto min-h-screen relative overflow-hidden font-inter"
+                    style="background-image: url(${getBackgroundImage()}); background-size: cover; background-position: center bottom; background-repeat: no-repeat; transition: background-image 1s ease-in-out;">
+                    <!-- Status Bar - Fixed at top -->
+                    <div class="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-black bg-opacity-30 backdrop-blur-sm shadow-lg">
+                        <div class="flex justify-between items-center p-3 text-white text-sm">
+                            <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div class="flex items-center space-x-1">
+                                <span>●●●○○</span>
+                                <span class="ml-2">📶</span>
+                                <span>🔋100%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Game Info (Total Assets) with a box background -->
+                    <div class="relative z-10 text-center text-white pt-10 pb-4">
+                        <div class="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-4 mx-4 shadow-lg border border-white border-opacity-30">
+                            <div class="text-3xl font-bold drop-shadow-lg">총 자산: ${formatMoney(getTotalAssets())}</div>
+                            <div class="text-sm opacity-80 mt-2 space-y-1">
+                                <p>현금: ${formatMoney(cash)}</p>
+                                <p>주식 자산: ${formatMoney(Object.entries(portfolio).reduce((total, [stock, data]) => total + (stocks[stock]?.price || 0) * (data.shares || 0), 0))}</p>
+                                <p>부동산 자산: ${formatMoney(Object.entries(realEstate).reduce((total, [property, data]) => total + (realEstateData[property]?.price || 0) * (data.quantity || 0), 0))}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TV Broadcast Bubble - Positioned relative to flow, not fixed -->
+                    ${tvMessage && isTvOn ? `
+                        <div class="relative z-20 mx-4 mb-4 mt-2">
+                            <div class="bg-white bg-opacity-80 rounded-xl p-3 shadow-xl border border-gray-200 animate-fade-in-up">
+                                <div class="text-sm text-gray-800 font-medium">${tvMessage}</div>
+                                <div class="absolute bottom-0 left-6 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white transform translate-y-full"></div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <!-- Current Mission Display - NEW POSITION -->
+                    ${currentMissionIndex < missions.length ? `
+                        <div class="fixed bottom-[110px] left-1/2 transform -translate-x-1/2 w-full max-w-sm z-30 text-center text-white pb-4">
+                            <div class="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-3 mx-4 shadow-lg border border-white border-opacity-30">
+                                <div class="text-sm font-bold drop-shadow-lg">현재 미션:</div>
+                                <div class="text-lg font-semibold drop-shadow-lg">${missions[currentMissionIndex].description}</div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <!-- Bottom Dock - All 5 main icons in one row, centered return rate -->
+                    <div class="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-40 bg-white bg-opacity-20 backdrop-blur-md rounded-t-3xl p-4 shadow-inner-lg">
+                        <div class="flex justify-around items-center">
+                            <!-- Lottery Button -->
+                            <button id="lotteryBtn" class="flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 relative p-2 rounded-xl">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ticket mb-1 text-yellow-300 drop-shadow-md"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg>
+                                <span class="text-xs font-semibold">복권</span>
+                            </button>
+                            <!-- Stocks Button -->
+                            <button id="stocksBtn" class="flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 p-2 rounded-xl">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up mb-1 text-blue-300 drop-shadow-md"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                                <span class="text-xs font-semibold">주식</span>
+                            </button>
+                            <!-- Return Rate Display - Centered -->
+                            <div class="flex flex-col items-center text-white opacity-90 p-2 rounded-xl">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bar-chart-2 mb-1 ${returnRateColor} drop-shadow-md"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+                                <span class="text-xs font-semibold">수익률</span>
+                                <span class="text-sm font-bold ${returnRateColor}">
+                                    ${returnRate.toFixed(2)}%
+                                </span>
+                            </div>
+                            <!-- Real Estate Button -->
+                            <button id="realEstateBtn" class="flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 p-2 rounded-xl">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-home mb-1 text-orange-300 drop-shadow-md"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                <span class="text-xs font-semibold">부동산</span>
+                            </button>
+                            <!-- TV Button -->
+                            <button id="tvBtn" class="flex flex-col items-center text-white bg-opacity-80 hover:bg-opacity-100 transition-opacity duration-200 p-2 rounded-xl ${isTvOn ? 'text-purple-300' : 'text-gray-400 opacity-60'}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-tv mb-1 drop-shadow-md"><rect width="20" height="15" x="2" y="7" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+                                <span class="text-xs font-semibold">TV</span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Alert Dialog Placeholder -->
+                    <div id="alertDialogContainer"></div>
+                </div>
+            `;
+
+            // Add event listeners for navigation buttons
+            document.getElementById('lotteryBtn').addEventListener('click', () => { playButtonClickSound(); currentApp = 'lottery'; renderApp('lottery'); });
+            document.getElementById('stocksBtn').addEventListener('click', () => { playButtonClickSound(); currentApp = 'stocks'; renderApp('stocks'); });
+            document.getElementById('realEstateBtn').addEventListener('click', () => { playButtonClickSound(); currentApp = 'realestate'; renderApp('realestate'); });
+            
+            // TV Button Logic
+            document.getElementById('tvBtn').addEventListener('click', () => {
+                playButtonClickSound();
+                if (isTvOn) {
+                    // TV가 켜져 있으면 끄고 홈으로 돌아감
+                    isTvOn = false;
+                    selectedChannel = null;
+                    tvMessage = '';
+                    if (tvMessageIntervalId) {
+                        clearInterval(tvMessageIntervalId);
+                        tvMessageIntervalId = null;
+                    }
+                    currentApp = 'home';
+                } else {
+                    // TV가 꺼져 있으면 켜고 첫 채널로 이동
+                    isTvOn = true;
+                    selectedChannel = Object.keys(tvChannels)[0];
+                    watchChannel(selectedChannel); // TV 메시지 및 인터벌 설정
+                    currentApp = 'tv';
+                }
+                renderApp(currentApp);
+            });
+
+            // Render alert dialog if active
+            if (showAlertDialog) {
+                renderAlertDialog();
+            }
+        }
+
+        function renderStocks() {
+            const appContainer = document.getElementById('app-container');
+            if (!currentStockView) { // Stock list view
+                appContainer.innerHTML = `
+                    <div class="max-w-sm mx-auto min-h-screen flex flex-col font-inter bg-gray-100">
+                        <!-- Status Bar -->
+                        <div class="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                            <div class="flex justify-between items-center p-3 text-white text-sm">
+                                <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                <div class="flex items-center space-x-1">
+                                    <span>●●●○○</span>
+                                    <span class="ml-2">📶</span>
+                                    <span>🔋100%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 flex items-center shadow-md" style="margin-top: 50px;">
+                            <button id="backToHomeBtn" class="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                            </button>
+                            <h1 class="text-xl font-bold">주식</h1>
+                        </div>
+                        
+                        <div class="p-4">
+                            <div class="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                                <div class="text-sm text-gray-600">보유 현금</div>
+                                <div class="text-3xl font-bold text-blue-700">${formatMoney(cash)}</div>
+                            </div>
+                            
+                            <div class="space-y-4">
+                                ${Object.entries(stocks).map(([stockName, data]) => {
+                                    const ownedShares = portfolio[stockName]?.shares || 0;
+                                    const miniHistory = data.history.slice(-10);
+                                    const maxPrice = Math.max(...miniHistory);
+                                    const minPrice = Math.min(...miniHistory);
+                                    const priceRange = maxPrice - minPrice || 1;
+                                    const width = 200; // SVG width for mini graph
+                                    const height = 24; // SVG height for mini graph
+                                    
+                                    const points = miniHistory.map((price, index) => {
+                                        const x = (index / (miniHistory.length - 1)) * width;
+                                        const y = ((maxPrice - price) / priceRange) * height;
+                                        return `${x},${y}`;
+                                    }).join(' ');
+
+                                    return `
+                                        <button id="stock-${stockName}" class="w-full bg-white border rounded-xl p-4 shadow-lg hover:shadow-xl transition-all duration-300 text-left transform hover:scale-[1.01] ${ownedShares > 0 ? 'border-2 border-yellow-500' : ''}">
+                                            <div class="flex justify-between items-center mb-2">
+                                                <span class="font-bold text-lg text-gray-800">${stockName}</span>
+                                                <div class="text-right">
+                                                    <div class="font-bold text-xl text-gray-900">${data.price.toLocaleString()}원</div>
+                                                    <div class="text-sm font-semibold ${data.change >= 0 ? 'text-red-500' : 'text-blue-500'}">
+                                                        ${data.change >= 0 ? '▲' : '▼'} ${(Math.abs(data.change) * 100).toFixed(2)}%
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Mini Line Graph -->
+                                            <div class="mb-3">
+                                                <svg width="100%" height="32" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" class="overflow-visible">
+                                                    <polyline 
+                                                        points="${points}"
+                                                        fill="none"
+                                                        stroke="${data.change >= 0 ? '#ef4444' : '#3b82f6'}"
+                                                        stroke-width="1.5"
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                    />
+                                                </svg>
+                                            </div>
+                                            
+                                            <div class="flex justify-between items-center text-sm text-gray-600">
+                                                <span>보유: <span class="font-semibold">${ownedShares}주</span></span>
+                                                <span class="text-blue-600 font-semibold">상세보기 →</span>
+                                            </div>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                        <!-- Alert Dialog Placeholder -->
+                        <div id="alertDialogContainer"></div>
+                    </div>
+                `;
+
+                document.getElementById('backToHomeBtn').addEventListener('click', () => { playButtonClickSound(); currentApp = 'home'; renderApp('home'); });
+                Object.keys(stocks).forEach(stockName => {
+                    document.getElementById(`stock-${stockName}`).addEventListener('click', () => {
+                        playButtonClickSound();
+                        currentStockView = stockName;
+                        renderApp('stocks'); // Re-render to show detail view
+                    });
+                });
+            } else { // Stock detail view
+                const stockData = stocks[currentStockView];
+                const ownedStockData = portfolio[currentStockView];
+                const hasOwnedShares = ownedStockData?.shares > 0;
+                const profitLoss = hasOwnedShares ? (stockData.price - ownedStockData.avgPrice) * ownedStockData.shares : 0;
+                const profitLossPercent = hasOwnedShares && ownedStockData.avgPrice > 0 ? (profitLoss / (ownedStockData.shares * ownedStockData.avgPrice)) * 100 : 0;
+                const profitLossColor = profitLoss >= 0 ? 'text-red-500' : 'text-blue-500';
+
+                const fullHistory = stockData.history;
+                const maxPriceFull = Math.max(...fullHistory);
+                const minPriceFull = Math.min(...fullHistory);
+                const priceRangeFull = maxPriceFull - minPriceFull || 1;
+                const svgWidth = 320; // Max width for SVG
+                const svgHeight = 80; // Max height for SVG
+                const svgPadding = 10;
+
+                const fullPoints = fullHistory.map((price, index) => {
+                    const x = svgPadding + (index / (fullHistory.length - 1)) * (svgWidth - 2 * svgPadding);
+                    const y = svgPadding + ((maxPriceFull - price) / priceRangeFull) * svgHeight;
+                    return `${x},${y}`;
+                }).join(' ');
+
+                const areaPoints = `${svgPadding},${svgHeight + svgPadding} ${fullPoints} ${svgWidth - svgPadding},${svgHeight + svgPadding}`;
+
+                appContainer.innerHTML = `
+                    <div class="max-w-sm mx-auto min-h-screen flex flex-col font-inter">
+                        <!-- Status Bar -->
+                        <div class="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                            <div class="flex justify-between items-center p-3 text-white text-sm">
+                                <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                <div class="flex items-center space-x-1">
+                                    <span>●●●○○</span>
+                                    <span class="ml-2">📶</span>
+                                    <span>🔋100%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 flex items-center shadow-md" style="margin-top: 50px;">
+                            <button id="backToStocksListBtn" class="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                            </button>
+                            <h1 class="text-xl font-bold">${currentStockView}</h1>
+                        </div>
+                        
+                        <div class="p-4">
+                            <!-- 현재 가격 -->
+                            <div class="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                                <div class="text-center">
+                                    <div class="text-4xl font-extrabold text-gray-900 mb-1">${stockData.price.toLocaleString()}원</div>
+                                    <div class="text-xl font-semibold ${stockData.change >= 0 ? 'text-red-500' : 'text-blue-500'}">
+                                        ${stockData.change >= 0 ? '▲' : '▼'} ${(Math.abs(stockData.change) * 100).toFixed(2)}%
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 상세 차트 - 선 그래프 -->
+                            <div class="bg-white border rounded-xl p-4 mb-4 shadow-lg">
+                                <h3 class="font-bold text-gray-800 mb-3 text-lg">가격 추이</h3>
+                                <div class="relative">
+                                    <svg width="100%" height="120" viewBox="0 0 ${svgWidth} ${svgHeight + svgPadding * 2}" preserveAspectRatio="xMidYMid meet" class="overflow-visible">
+                                        <defs>
+                                            <linearGradient id="priceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                                <stop offset="0%" stop-color="${stockData.change >= 0 ? '#ef4444' : '#3b82f6'}" stop-opacity="0.3"/>
+                                                <stop offset="100%" stop-color="${stockData.change >= 0 ? '#ef4444' : '#3b82f6'}" stop-opacity="0.1"/>
+                                            </linearGradient>
+                                        </defs>
+                                        
+                                        <polygon 
+                                            points="${areaPoints}" 
+                                            fill="url(#priceGradient)"
+                                        />
+                                        <polyline 
+                                            points="${fullPoints}"
+                                            fill="none"
+                                            stroke="${stockData.change >= 0 ? '#ef4444' : '#3b82f6'}"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        />
+                                        ${fullHistory.map((price, index) => {
+                                            const x = svgPadding + (index / (fullHistory.length - 1)) * (svgWidth - 2 * svgPadding);
+                                            const y = svgPadding + ((maxPriceFull - price) / priceRangeFull) * svgHeight;
+                                            return `
+                                                <circle
+                                                    cx="${x}"
+                                                    cy="${y}"
+                                                    r="3"
+                                                    fill="${stockData.change >= 0 ? '#ef4444' : '#3b82f6'}"
+                                                    class="hover:r-4 transition-all duration-200 cursor-pointer"
+                                                >
+                                                    <title>${price.toLocaleString()}원</title> 
+                                                </circle>
+                                            `;
+                                        }).join('')}
+                                    </svg>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-2 text-center">
+                                    최근 ${stockData.history.length}일간 데이터
+                                </div>
+                            </div>
+                            
+                            <!-- 보유 현황 -->
+                            <div class="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                                <div class="text-sm text-gray-600">보유 주식</div>
+                                <div class="text-3xl font-bold text-blue-700">${ownedStockData?.shares || 0}주</div>
+                                ${hasOwnedShares ? `
+                                    <div class="text-sm text-gray-600 mt-2">
+                                        <p>평가금액: <span class="font-semibold">${formatMoney((ownedStockData.shares || 0) * stockData.price)}</span></p>
+                                        <p>평균 매수가: <span class="font-semibold">${formatMoney(ownedStockData.avgPrice)}</span></p>
+                                        <p>손익: <span class="font-bold ${profitLossColor}">${formatMoney(profitLoss)} (${profitLossPercent.toFixed(2)}%)</span></p>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
+                            <!-- 거래 버튼들 -->
+                            <div class="space-y-6">
+                                <div>
+                                    <div class="text-xl font-bold text-red-600 mb-3">매수</div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        ${[1, 5, 10, 20].map(quantity => `
+                                            <button id="buy-${quantity}" class="bg-red-500 text-white py-4 px-4 rounded-xl font-bold text-lg shadow-md hover:bg-red-600 transition-all duration-300 transform hover:scale-105">
+                                                ${quantity}주 매수<br/>
+                                                <span class="text-sm opacity-90">
+                                                    ${formatMoney(stockData.price * quantity)}
+                                                </span>
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <div class="text-xl font-bold text-blue-600 mb-3">매도</div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        ${[1, 5, 10, 20].map(quantity => `
+                                            <button id="sell-${quantity}" class="bg-blue-500 text-white py-4 px-4 rounded-xl font-bold text-lg shadow-md hover:bg-blue-600 transition-all duration-300 transform hover:scale-105"
+                                                ${!hasOwnedShares || ownedStockData.shares < quantity ? 'disabled' : ''}>
+                                                ${quantity}주 매도<br/>
+                                                <span class="text-sm opacity-90">
+                                                    ${formatMoney(stockData.price * quantity)}
+                                                </span>
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Alert Dialog Placeholder -->
+                        <div id="alertDialogContainer"></div>
+                    </div>
+                `;
+
+                document.getElementById('backToStocksListBtn').addEventListener('click', () => { playButtonClickSound(); currentStockView = null; renderApp('stocks'); });
+                [1, 5, 10, 20].forEach(quantity => {
+                    document.getElementById(`buy-${quantity}`).addEventListener('click', () => tradeStock(currentStockView, quantity, 'buy'));
+                    document.getElementById(`sell-${quantity}`).addEventListener('click', () => tradeStock(currentStockView, quantity, 'sell'));
+                });
+            }
+            if (showAlertDialog) {
+                renderAlertDialog();
+            }
+        }
+
+        function renderRealEstate() {
+            const appContainer = document.getElementById('app-container');
+            appContainer.innerHTML = `
+                <div class="max-w-sm mx-auto min-h-screen flex flex-col font-inter">
+                    <!-- Status Bar -->
+                    <div class="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                        <div class="flex justify-between items-center p-3 text-white text-sm">
+                            <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div class="flex items-center space-x-1">
+                                <span>●●●○○</span>
+                                <span class="ml-2">📶</span>
+                                <span>🔋100%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-r from-orange-500 to-red-600 text-white p-4 flex items-center shadow-md" style="margin-top: 50px;">
+                        <button id="backToHomeBtn" class="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                        </button>
+                        <h1 class="text-xl font-bold">부동산</h1>
+                    </div>
+                    
+                    <div class="p-4">
+                        <div class="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200">
+                            <div class="text-sm text-gray-600">보유 현금</div>
+                            <div class="text-3xl font-bold text-orange-700">${formatMoney(cash)}</div>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            ${Object.entries(realEstateData).map(([propertyName, data]) => `
+                                <div class="bg-white border rounded-xl p-4 shadow-lg transform hover:scale-[1.01] transition-all duration-300">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <div>
+                                            <div class="font-bold text-lg text-gray-800">${propertyName}</div>
+                                            <div class="text-xs text-gray-500">${data.description}</div>
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="font-bold text-xl text-gray-900">${formatMoney(data.price)}</div>
+                                            <div class="text-sm font-semibold ${data.change >= 0 ? 'text-red-500' : 'text-blue-500'}">
+                                                ${data.change >= 0 ? '▲' : '▼'} ${(Math.abs(data.change) * 100).toFixed(2)}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="bg-gray-50 rounded-lg p-3 mb-3 shadow-inner">
+                                        <div class="grid grid-cols-2 gap-2 text-sm">
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">연 수익률</span>
+                                                <span class="font-bold text-green-600">${(data.rentYield * 100).toFixed(1)}%</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">월 임대료</span>
+                                                <span class="font-bold text-green-600">
+                                                    ${formatMoney(data.price * data.rentYield / 12)}
+                                                </span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="font-bold">보유</span>
+                                                <span class="font-bold">${realEstate[propertyName]?.quantity || 0}채</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">총 가치</span>
+                                                <span class="font-bold text-orange-700">
+                                                    ${formatMoney(data.price * (realEstate[propertyName]?.quantity || 0))}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="space-y-3">
+                                        <div class="text-base font-bold text-red-600">매입</div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            ${[1, 2].map(quantity => `
+                                                <button id="buy-re-${propertyName}-${quantity}" class="bg-red-500 text-white py-3 px-3 rounded-xl text-base font-bold shadow-md hover:bg-red-600 transition-all duration-300 transform hover:scale-105">
+                                                    ${quantity}채 매입<br/>
+                                                    <span class="text-xs opacity-90">
+                                                        ${formatMoney(data.price * quantity)}
+                                                    </span>
+                                                </button>
+                                            `).join('')}
+                                        </div>
+                                        
+                                        <div class="text-base font-bold text-blue-600">매도</div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            ${[1, 2].map(quantity => `
+                                                <button id="sell-re-${propertyName}-${quantity}" class="bg-blue-500 text-white py-3 px-3 rounded-xl text-base font-bold shadow-md hover:bg-blue-600 transition-all duration-300 transform hover:scale-105"
+                                                    ${(realEstate[propertyName]?.quantity || 0) < quantity ? 'disabled' : ''}>
+                                                    ${quantity}채 매도<br/>
+                                                    <span class="text-xs opacity-90">
+                                                        ${formatMoney(data.price * quantity)}
+                                                    </span>
+                                                </button>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <!-- Alert Dialog Placeholder -->
+                    <div id="alertDialogContainer"></div>
+                </div>
+            `;
+
+            document.getElementById('backToHomeBtn').addEventListener('click', () => { playButtonClickSound(); currentApp = 'home'; renderApp('home'); });
+            Object.keys(realEstateData).forEach(propertyName => {
+                [1, 2].forEach(quantity => {
+                    document.getElementById(`buy-re-${propertyName}-${quantity}`).addEventListener('click', () => tradeRealEstate(propertyName, quantity, 'buy'));
+                    document.getElementById(`sell-re-${propertyName}-${quantity}`).addEventListener('click', () => tradeRealEstate(propertyName, quantity, 'sell'));
+                });
+            });
+            if (showAlertDialog) {
+                renderAlertDialog();
+            }
+        }
+
+        function renderLottery() {
+            const appContainer = document.getElementById('app-container');
+            appContainer.innerHTML = `
+                <div class="max-w-sm mx-auto min-h-screen flex flex-col font-inter">
+                    <!-- Status Bar -->
+                    <div class="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                        <div class="flex justify-between items-center p-3 text-white text-sm">
+                            <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div class="flex items-center space-x-1">
+                                <span>●●●○○</span>
+                                <span class="ml-2">📶</span>
+                                <span>🔋100%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-r from-yellow-500 to-orange-600 text-white p-4 flex items-center shadow-md" style="margin-top: 50px;">
+                        <button id="backToHomeBtn" class="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                        </button>
+                        <h1 class="text-xl font-bold">복권</h1>
+                    </div>
+                    
+                    <div class="p-4 space-y-6">
+                        <div class="bg-white rounded-xl p-4 mb-4 shadow-lg border border-gray-200 text-center">
+                            <div class="text-sm text-gray-600">보유 현금</div>
+                            <div class="text-3xl font-bold text-yellow-700">${formatMoney(cash)}</div>
+                        </div>
+
+                        <!-- Annuity Lottery -->
+                        <div class="bg-white rounded-xl p-4 shadow-lg border border-gray-200">
+                            <h2 class="text-xl font-bold text-gray-800 mb-3">연금 복권</h2>
+                            <p class="text-sm text-gray-600 mb-4">매주 당첨 번호를 확인하는 복권입니다. (즉시 당첨 확인)</p>
+                            <div class="flex justify-between items-center mb-3">
+                                <span class="text-lg font-semibold text-gray-700">가격: ${formatMoney(lotteryPrices.annuity)}</span>
+                                <span class="text-sm text-gray-500">오늘 구매 횟수: ${lotteryPurchasesToday.annuity}/30</span>
+                                <button id="buyAnnuityBtn" class="bg-green-500 text-white py-2 px-4 rounded-xl font-bold shadow-md hover:bg-green-600 transition-all duration-300"
+                                    ${lotteryPurchasesToday.annuity >= 30 ? 'disabled' : ''}>
+                                    구매하기
+                                </button>
+                            </div>
+                            ${pendingAnnuityLotteries.length > 0 ? `
+                                <div class="mt-4 text-sm text-gray-600">
+                                    <h3 class="font-bold mb-1">구매한 연금 복권:</h3>
+                                    <ul class="list-disc list-inside">
+                                        ${pendingAnnuityLotteries.map(ticket => `
+                                            <li>
+                                                구매일: ${ticket.purchaseDay}일, 결과 확인까지 ${30 - (gameDay - ticket.purchaseDay)}일 남음
+                                            </li>
+                                        `).join('')}
+                                    </ul>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Spitto Lottery -->
+                        <div class="bg-white rounded-xl p-4 shadow-lg border border-gray-200">
+                            <h2 class="text-xl font-bold text-gray-800 mb-3">스피또</h2>
+                            <p class="text-sm text-gray-600 mb-4">즉석에서 긁어 당첨을 확인하는 복권입니다.</p>
+                            <div class="flex justify-between items-center mb-3">
+                                <span class="text-lg font-semibold text-gray-700">가격: ${formatMoney(lotteryPrices.spitto)}</span>
+                                <span class="text-sm text-gray-500">오늘 구매 횟수: ${lotteryPurchasesToday.spitto}/30</span>
+                                <button id="buySpittoBtn" class="bg-green-500 text-white py-2 px-4 rounded-xl font-bold shadow-md hover:bg-green-600 transition-all duration-300"
+                                    ${lotteryPurchasesToday.spitto >= 30 ? 'disabled' : ''}>
+                                    구매하기
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Alert Dialog Placeholder -->
+                    <div id="alertDialogContainer"></div>
+                </div>
+            `;
+            document.getElementById('backToHomeBtn').addEventListener('click', () => { playButtonClickSound(); currentApp = 'home'; renderApp('home'); });
+            document.getElementById('buyAnnuityBtn').addEventListener('click', () => buyLotteryTicket('annuity'));
+            document.getElementById('buySpittoBtn').addEventListener('click', () => buyLotteryTicket('spitto'));
+            if (showAlertDialog) {
+                renderAlertDialog();
+            }
+        }
+
+        function renderTv() {
+            const appContainer = document.getElementById('app-container');
+            appContainer.innerHTML = `
+                <div class="max-w-sm mx-auto min-h-screen flex flex-col font-inter bg-gray-100">
+                    <!-- Status Bar -->
+                    <div class="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-sm z-50 bg-gray-900 bg-opacity-90 shadow-lg">
+                        <div class="flex justify-between items-center p-3 text-white text-sm">
+                            <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div class="flex items-center space-x-1">
+                                <span>●●●○○</span>
+                                <span class="ml-2">📶</span>
+                                <span>🔋100%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-r from-purple-500 to-pink-600 text-white p-4 flex items-center shadow-md" style="margin-top: 50px;">
+                        <button id="backToHomeFromTvBtn" class="mr-4 p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-all duration-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                        </button>
+                        <h1 class="text-xl font-bold">📺 TV</h1>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 gap-4 p-4">
+                        ${Object.entries(tvChannels).map(([key, channel]) => `
+                            <button id="channel-${key}" class="p-5 rounded-xl text-left transition-all duration-300 shadow-lg ${
+                                selectedChannel === key 
+                                    ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white transform scale-[1.02]' 
+                                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                            }">
+                                <div class="flex items-center mb-2">
+                                    <span class="text-3xl mr-4">${channel.icon}</span>
+                                    <div>
+                                        <div class="font-bold text-lg">${channel.name}</div>
+                                        <div class="text-sm opacity-80">${channel.description}</div>
+                                    </div>
+                                    ${selectedChannel === key ? `
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-volume-2 ml-auto text-yellow-300 animate-pulse"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                                    ` : ''}
+                                </div>
+                            </button>
+                        `).join('')}
+                    </div>
+                    
+                    ${selectedChannel ? `
+                        <div class="mt-6 bg-gray-800 rounded-xl p-5 shadow-lg border border-gray-700 mx-4">
+                            <div class="text-white text-center">
+                                <div class="text-xl font-bold mb-2">
+                                    ${tvChannels[selectedChannel].name} 시청 중
+                                </div>
+                                <div class="text-base opacity-80">
+                                    ${tvMessage ? `
+                                        <div class="mt-4 p-3 bg-gray-700 rounded-lg text-sm italic">
+                                            "${tvMessage}"
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            // Back to Home button listener - Always present on TV screen
+            document.getElementById('backToHomeFromTvBtn').addEventListener('click', () => {
+                playButtonClickSound();
+                currentApp = 'home';
+                // When going back from TV, turn off TV related states
+                isTvOn = false;
+                selectedChannel = null;
+                tvMessage = '';
+                if (tvMessageIntervalId) {
+                    clearInterval(tvMessageIntervalId);
+                    tvMessageIntervalId = null;
+                }
+                renderApp('home');
+            });
+            Object.keys(tvChannels).forEach(key => {
+                document.getElementById(`channel-${key}`).addEventListener('click', () => watchChannel(key));
+            });
+        }
+
+        function renderEpisodeScreen() {
+            const appContainer = document.getElementById('app-container');
+            const episode = currentEpisode;
+            const currentScene = episode.scenes[currentSceneIndex];
+            const isLastScene = currentSceneIndex === episode.scenes.length - 1;
+
+            appContainer.innerHTML = `
+                <div class="max-w-sm mx-auto min-h-screen relative overflow-hidden font-inter flex flex-col items-center justify-end p-6 text-white"
+                    style="background-image: url(${episode.backgroundImage}); background-size: cover; background-position: center; background-repeat: no-repeat;">
+                    <div class="absolute inset-0 bg-black bg-opacity-40"></div>
+
+                    <div class="relative z-10 w-full max-w-md bg-white bg-opacity-80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white border-opacity-30">
+                        <h2 class="text-2xl font-bold mb-3 text-center drop-shadow-md">${episode.title}</h2>
+                        
+                        <div class="mb-4 p-3 rounded-xl shadow-sm ${currentScene.speaker === '유나' ? 'bg-blue-500 text-white ml-auto rounded-br-none' : 'bg-gray-200 text-gray-800 mr-auto rounded-bl-none'}">
+                            <div class="font-bold mb-1 text-sm">${currentScene.speaker}</div>
+                            <p class="text-base">${currentScene.content}</p>
+                        </div>
+
+                        ${currentScene.choices ? `
+                            <div class="mt-4 space-y-2 flex flex-col items-center">
+                                ${currentScene.choices.map((choice, index) => `
+                                    <button id="episode-choice-${index}" class="w-11/12 bg-gradient-to-r from-purple-600 to-indigo-700 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-indigo-800 transition-all duration-300 shadow-md">
+                                        ${choice.text}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <button id="nextEpisodeSceneBtn" class="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white py-3 rounded-full font-bold text-lg shadow-xl hover:from-green-600 hover:to-blue-600 transition-all duration-300">
+                                ${isLastScene ? '에피소드 종료' : '다음'}
+                            </button>
+                        `}
+                    </div>
+                </div>
+            `;
+
+            if (currentScene.choices) {
+                currentScene.choices.forEach((choice, index) => {
+                    document.getElementById(`episode-choice-${index}`).addEventListener('click', () => handleEpisodeChoice(choice.outcome));
+                });
+            } else {
+                document.getElementById('nextEpisodeSceneBtn').addEventListener('click', handleNextEpisodeScene);
+            }
+        }
+
+        function renderEndingScreen() {
+            const appContainer = document.getElementById('app-container');
+            const ending = endings[selectedEnding];
+            const showEpilogue = appContainer.dataset.showEpilogue === 'true'; // Use dataset to manage state
+
+            appContainer.innerHTML = `
+                <div class="w-full h-screen flex flex-col items-center justify-center text-white text-center p-6 relative overflow-hidden font-inter"
+                    style="background-image: url(${ending.backgroundImage}); background-size: cover; background-position: center; background-repeat: no-repeat;">
+                    <!-- Background Overlay -->
+                    <div class="absolute inset-0 bg-black bg-opacity-60"></div>
+                    
+                    <!-- Status Bar -->
+                    <div class="fixed top-0 left-0 w-full z-50 bg-black bg-opacity-40 backdrop-blur-sm shadow-lg">
+                        <div class="flex justify-between items-center p-3 text-white text-sm max-w-sm mx-auto">
+                            <span>${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div class="flex items-center space-x-1">
+                                <span>●●●○○</span>
+                                <span class="ml-2">📶</span>
+                                <span>🔋100%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="relative z-10 max-w-md w-full mx-auto">
+                        ${!showEpilogue ? `
+                            <!-- Ending screen -->
+                            <div class="text-8xl mb-8 animate-fade-in-up">${ending.image}</div>
+                            <h1 class="text-4xl font-extrabold mb-6 drop-shadow-lg animate-fade-in-up-slow">${ending.title}</h1>
+                            <p class="text-xl mb-10 leading-relaxed drop-shadow-md animate-fade-in-up-slower">${ending.description}</p>
+                            <div class="space-y-4 w-full">
+                                <div class="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-6 border border-white border-opacity-30 shadow-lg animate-fade-in">
+                                    <div class="text-sm opacity-90">최종 자산</div>
+                                    <div class="text-3xl font-bold">${formatMoney(getTotalAssets())}</div>
+                                </div>
+                                <div class="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-6 border border-white border-opacity-30 shadow-lg animate-fade-in delay-100">
+                                    <div class="text-sm opacity-90">플레이 시간</div>
+                                    <div class="text-2xl font-bold">${gameDay}일</div>
+                                </div>
+                                
+                                ${ending.epilogue ? `
+                                    <button id="viewEpilogueBtn" class="w-full bg-white bg-opacity-30 backdrop-blur-sm text-white py-4 rounded-xl font-bold text-lg hover:bg-opacity-40 transition-all duration-300 border border-white border-opacity-30 shadow-lg animate-fade-in delay-200">
+                                        📖 에피로그 보기
+                                    </button>
+                                ` : ''}
+                                
+                                <button id="restartGameBtn" class="w-full bg-white text-gray-900 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all duration-300 shadow-xl animate-fade-in delay-300">
+                                    🔄 다시 시작하기
+                                </button>
+                            </div>
+                        ` : `
+                            <!-- Epilogue screen -->
+                            <div class="text-6xl mb-6 animate-fade-in-up">${ending.image}</div>
+                            <h2 class="text-3xl font-extrabold mb-8 drop-shadow-lg animate-fade-in-up-slow">${ending.epilogue.title}</h2>
+                            
+                            <div class="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-6 mb-6 text-left border border-white border-opacity-30 shadow-lg animate-fade-in">
+                                <p class="text-lg leading-relaxed italic drop-shadow-sm">
+                                    "${ending.epilogue.content}"
+                                </p>
+                            </div>
+                            
+                            <div class="bg-white bg-opacity-15 backdrop-blur-sm rounded-xl p-6 mb-8 text-left border border-white border-opacity-20 shadow-lg animate-fade-in delay-100">
+                                <h3 class="text-xl font-bold mb-4 drop-shadow-sm">그 후의 이야기</h3>
+                                <p class="text-base leading-relaxed drop-shadow-sm">
+                                    ${ending.epilogue.afterLife}
+                                </p>
+                            </div>
+                            
+                            <div class="space-y-4">
+                                <button id="backToEndingBtn" class="w-full bg-white bg-opacity-30 backdrop-blur-sm text-white py-4 rounded-xl font-bold hover:bg-opacity-40 transition-all duration-300 border border-white border-opacity-30 shadow-lg animate-fade-in delay-200">
+                                    ← 뒤로 가기
+                                </button>
+                                <button id="restartGameBtn" class="w-full bg-white text-gray-900 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all duration-300 shadow-xl animate-fade-in delay-300">
+                                    🔄 다시 시작하기
+                                </button>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+
+            if (!showEpilogue) {
+                if (ending.epilogue) {
+                    document.getElementById('viewEpilogueBtn').addEventListener('click', () => {
+                        playButtonClickSound();
+                        appContainer.dataset.showEpilogue = 'true'; // Update state
+                        renderApp('ending');
+                    });
+                }
+            } else {
+                document.getElementById('backToEndingBtn').addEventListener('click', () => {
+                    playButtonClickSound();
+                    appContainer.dataset.showEpilogue = 'false'; // Update state
+                    renderApp('ending');
+                });
+            }
+            document.getElementById('restartGameBtn').addEventListener('click', () => { playButtonClickSound(); window.location.reload(); });
+        }
+
+        // Render Alert Dialog
+        function renderAlertDialog() {
+            const alertDialogContainer = document.getElementById('alertDialogContainer');
+            if (!alertDialogContainer) return; // Exit if container not found
+
+            if (showAlertDialog) {
+                alertDialogContainer.innerHTML = `
+                    <div id="alertDialogOverlay" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+                        <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full transform transition-all duration-300 scale-100 opacity-100" onclick="event.stopPropagation()">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4 text-center">${alertDialogContent.title}</h3>
+                            <p class="text-gray-600 mb-6 text-center">${alertDialogContent.message}</p>
+                            <button
+                                id="alertDialogCloseButton"
+                                class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-indigo-700 transition-all duration-300 shadow-md"
+                            >
+                                확인
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('alertDialogCloseButton').addEventListener('click', () => {
+                    showAlertDialog = false;
+                    renderApp(currentApp); // Re-render to hide alert
+                });
+                document.getElementById('alertDialogOverlay').addEventListener('click', (e) => {
+                    if (e.target.id === 'alertDialogOverlay') {
+                        showAlertDialog = false;
+                        renderApp(currentApp);
+                    }
+                });
+            } else {
+                alertDialogContainer.innerHTML = ''; // Clear the dialog
+            }
+        }
+
+        // Main render function
+        function renderApp(app) {
+            switch (app) {
+                case 'initialIntro':
+                    renderInitialIntro();
+                    break;
+                case 'prologue':
+                    renderPrologue();
+                    break;
+                case 'home':
+                    renderHome();
+                    break;
+                case 'stocks':
+                    renderStocks();
+                    break;
+                case 'realestate':
+                    renderRealEstate();
+                    break;
+                case 'lottery':
+                    renderLottery();
+                    break;
+                case 'tv':
+                    renderTv();
+                    break;
+                case 'ending':
+                    renderEndingScreen();
+                    break;
+                default:
+                    renderHome();
+            }
+        }
+
+        // Initialize Tone.js audio players once the window is loaded
+        window.onload = async function() {
+            try {
+                await Tone.loaded();
+
+                bgMusicPlayer = new Tone.Player({
+                    url: "https://github.com/heyrichoi/yuna/raw/refs/heads/main/SellBuyMusic%20-%20%ED%95%98%EC%99%80%EC%9D%B4%EC%9D%98%20%EB%B3%84%EB%82%B4%EB%A6%AC%EB%8A%94%20%EB%B0%A4.mp3",
+                    loop: true,
+                    volume: -15
+                }).toDestination();
+
+                buttonClickPlayer = new Tone.Player({
+                    url: "https://github.com/heyrichoi/yuna/raw/refs/heads/main/Blop%20Sound.mp3",
+                    volume: -10
+                }).toDestination();
+
+                transactionPlayer = new Tone.Player({
+                    url: "https://github.com/heyrichoi/yuna/raw/refs/heads/main/Coin%201.mp3",
+                    volume: -5
+                }).toDestination();
+
+                console.log("Tone.js players initialized.");
+            } catch (error) {
+                console.error("Tone.js audio loading error:", error);
+            }
+
+            // Start game loops after Tone.js is loaded
+            startGameLoops();
+            renderApp(gameStage); // Initial render based on gameStage
+        };
+
+        // Background music control based on gameStage
+        function updateBackgroundMusic() {
+            if (gameStage === 'playing') {
+                if (Tone.context.state !== 'running') {
+                    Tone.start().then(() => {
+                        if (bgMusicPlayer && bgMusicPlayer.loaded && bgMusicPlayer.state !== 'started') {
+                            bgMusicPlayer.start();
+                        }
+                    }).catch(error => console.error("Failed to start Tone.js context for BGM:", error));
+                } else {
+                    if (bgMusicPlayer && bgMusicPlayer.loaded && bgMusicPlayer.state !== 'started') {
+                        bgMusicPlayer.start();
+                    }
+                }
+            } else {
+                if (bgMusicPlayer && bgMusicPlayer.state === 'started') {
+                    bgMusicPlayer.stop();
+                }
+            }
+        }
+
+        // Call updateBackgroundMusic whenever gameStage changes
+        // This is a simplified "effect" for vanilla JS
+        let prevGameStage = gameStage;
+        setInterval(() => {
+            if (prevGameStage !== gameStage) {
+                updateBackgroundMusic();
+                prevGameStage = gameStage;
+            }
+        }, 500); // Check every 0.5 seconds
+
+        // Background image based on employee status
+        function getBackgroundImage() {
+            if (!isEmployee) {
+                return 'https://i.imgur.com/MeIYn0J.png';
+            }
+            return 'https://i.imgur.com/k3qPvGy.png';
+        }
+    </script>
+</body>
+</html>
+�
